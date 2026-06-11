@@ -1,4 +1,3 @@
-# VF2-Prob, Jan Hladěna, FIM UHK
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
@@ -430,9 +429,6 @@ def _csv_read_rows(path, expected_header):
 
 def _csv_write_rows_atomic(path, header, rows):
     path.parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.NamedTemporaryFile("w", delete=False, dir=str(path.parent), encoding="utf-8"), \
-            open(0) as _:
-        tmpname = _
     import uuid
     tmpfile = path.parent / f".tmp_{uuid.uuid4().hex}.csv"
     try:
@@ -468,6 +464,9 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser.add_argument("--runs", type=int, default=3)
     parser.add_argument("--timeout", type=float, default=60.0)
     parser.add_argument("--out", type=str, default="results.csv")
+    parser.add_argument("--per-query-out", type=str, default="",
+                        help="Optional CSV with one row per (query, run), so paired statistics "
+                             "(Wilcoxon, REI, pooled medians) can be re-derived from raw data.")
     parser.add_argument("--bin-threshold", type=float, default=0.5,
                         help="Edge probability threshold τ for VF2-Bin.")
     parser.add_argument("--pmin", type=float, default=1.0,
@@ -591,10 +590,12 @@ def main(argv: Optional[List[str]] = None) -> int:
     out_path.parent.mkdir(parents=True, exist_ok=True)
 
     new_rows = []
+    per_query_rows = []  # one dict per (query, run) when --per-query-out is set
 
     for method in methods:
         per_run_times, per_run_states, per_run_prune = [], [], []
         per_run_bestll, per_run_success, per_run_timeout = [], [], []
+        method_pq = []
         per_run_mem, per_run_ub50, per_run_ub90 = [], [], []
 
         # method dispatcher
@@ -617,8 +618,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         else:
             raise ValueError(f"Unknown method: {method}")
 
-        for Q in queries:
-            for _ in range(args.runs):
+        for q_idx, Q in enumerate(queries):
+            for run_idx in range(args.runs):
                 if method == "vf2prob":
                     res = run_engine(G, Q, timeout=args.timeout)
                     elapsed_ms = float(res.pop("elapsed_ms", float("nan")))
@@ -654,6 +655,13 @@ def main(argv: Optional[List[str]] = None) -> int:
                 per_run_mem.append(float(mem_mb))
                 per_run_ub50.append(float(nm.get("ub_gap_p50", float("nan"))))
                 per_run_ub90.append(float(nm.get("ub_gap_p90", float("nan"))))
+                method_pq.append({
+                    "query_id": q_idx, "query_size": Q.number_of_nodes(),
+                    "run": run_idx, "elapsed_ms": float(elapsed_ms),
+                    "states": float(nm["states"]), "prune_rate": float(nm["prune_rate"]),
+                    "best_loglik": float(nm["best_loglik"]), "success": float(success),
+                    "timed_out": int(timed_out),
+                })
 
             method_label = method
             if method == "vf2prob":
@@ -685,6 +693,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         }
         row = {k: _fmt_cell(k, v) for k, v in row.items()}
         new_rows.append(row)
+        for pq in method_pq:
+            per_query_rows.append({"dataset": dataset_name, "method": method_label, **pq})
 
     mode = args.write_mode
     if mode == "overwrite":
@@ -702,6 +712,16 @@ def main(argv: Optional[List[str]] = None) -> int:
 
         merged.sort(key=lambda r: (str(r.get("dataset", "")), str(r.get("method", ""))))
         _csv_write_rows_atomic(out_path, header, merged)
+
+    if args.per_query_out:
+        pq_path = Path(args.per_query_out)
+        pq_path.parent.mkdir(parents=True, exist_ok=True)
+        pq_header = ["dataset", "method", "query_id", "query_size", "run", "elapsed_ms",
+                     "states", "prune_rate", "best_loglik", "success", "timed_out"]
+        _csv_write_rows_atomic(pq_path, pq_header,
+                               [{k: _fmt_cell(k, r.get(k, "")) for k in pq_header}
+                                for r in per_query_rows])
+        print(f"Wrote per-query rows to {pq_path} ({len(per_query_rows)} rows)")
 
     print(f"Wrote results to {out_path} (mode={mode})")
     return 0

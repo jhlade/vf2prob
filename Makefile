@@ -5,7 +5,7 @@ SEED ?= 324
 .PHONY: help \
         build build-python build-cpp \
         fetch-data \
-        bench-python bench-python-snap bench-python-real bench-python-synth \
+        bench-python bench-python-real bench-python-synth \
         bench-cpp bench-cpp-snap bench-cpp-synth \
         run run-python run-cpp \
         test \
@@ -20,10 +20,9 @@ help:
 	@printf "  build-python        create Python venv, install dependencies\n"
 	@printf "  build-cpp           cmake configure + compile C++\n"
 	@printf "\nBenchmarks (Python PoC):\n"
-	@printf "  bench-python        synth + mol + gmark + SNAP\n"
+	@printf "  bench-python        synth + mol + gmark\n"
 	@printf "  bench-python-synth  synthetic S/M/L only\n"
 	@printf "  bench-python-real   mol + gmark S/M/L\n"
-	@printf "  bench-python-snap   SNAP facebook/enron/hepth\n"
 	@printf "\nBenchmarks (C++ system):\n"
 	@printf "  bench-cpp           synth + SNAP\n"
 	@printf "  bench-cpp-synth     synthetic S/M/L only\n"
@@ -62,16 +61,15 @@ fetch-data: build-python
 # =========================
 # Python PoC benchmarks
 # =========================
-bench-python: bench-python-synth bench-python-real bench-python-snap
+# SNAP is a C++-only scalability track in the paper (the Python PoC covers only
+# synth/mol/gmark; see DTEI2 experiments.tex). Hence no bench-python-snap here.
+bench-python: bench-python-synth bench-python-real
 
 bench-python-synth:
 	$(MAKE) -C vf2prob-poc-python synth_all SEED=$(SEED)
 
 bench-python-real:
 	$(MAKE) -C vf2prob-poc-python real_all SEED=$(SEED)
-
-bench-python-snap:
-	$(MAKE) -C vf2prob-poc-python snap_all SEED=$(SEED)
 
 
 # =========================

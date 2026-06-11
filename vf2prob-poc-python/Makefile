@@ -7,7 +7,7 @@ OUTDIR    ?= ../results
 DATADIR   ?= ../data
 QDIR      ?= ../queries
 SEED      ?= 324
-RUNS      ?= 3
+RUNS      ?= 1
 
 METHODS   ?= vf2,vf2pp,vf2bin,vf2prob
 BIN_TAU   ?= 0.7
@@ -15,9 +15,13 @@ PROB_SAMPLE_EVERY ?= 300
 PROB_UB      ?= node
 PROB_SEARCH  ?= dfs
 
-TO_S ?= 60
-TO_M ?= 90
-TO_L ?= 120
+# Per-query time limits match the published PoC protocol (experiments.tex,
+# subsec:protocol): 12 s for synthetic and molecular graphs, 10 s for gMark,
+# a single run per query. Override for longer limits on a faster machine, e.g.
+#   make synth_all TO_SYNTH=60 RUNS=3
+TO_SYNTH  ?= 12
+TO_MOL    ?= 12
+TO_GMARK  ?= 10
 
 ECHO = @printf
 
@@ -55,7 +59,7 @@ synth_S:
 	@mkdir -p $(OUTDIR)
 	$(PYTHON) $(RUNNER) \
 	  --dataset synth --methods $(METHODS) \
-	  --runs $(RUNS) --timeout $(TO_S) --qmin 5 --qmax 8 --nqueries 16 \
+	  --runs $(RUNS) --timeout $(TO_SYNTH) --qmin 5 --qmax 8 --nqueries 16 \
 	  --seed $(SEED) --bin-threshold $(BIN_TAU) \
 	  --pmin 0.80 --flip 0.00 \
 	  --vf2prob-two-pass --vf2prob-sample-every $(PROB_SAMPLE_EVERY) \
@@ -66,7 +70,7 @@ synth_M:
 	@mkdir -p $(OUTDIR)
 	$(PYTHON) $(RUNNER) \
 	  --dataset synth --methods $(METHODS) \
-	  --runs $(RUNS) --timeout $(TO_M) --qmin 9 --qmax 12 --nqueries 16 \
+	  --runs $(RUNS) --timeout $(TO_SYNTH) --qmin 9 --qmax 12 --nqueries 16 \
 	  --seed $(SEED) --bin-threshold $(BIN_TAU) \
 	  --pmin 0.70 --flip 0.05 \
 	  --vf2prob-two-pass --vf2prob-sample-every $(PROB_SAMPLE_EVERY) \
@@ -77,7 +81,7 @@ synth_L:
 	@mkdir -p $(OUTDIR)
 	$(PYTHON) $(RUNNER) \
 	  --dataset synth --methods $(METHODS) \
-	  --runs $(RUNS) --timeout $(TO_L) --qmin 13 --qmax 20 --nqueries 12 \
+	  --runs $(RUNS) --timeout $(TO_SYNTH) --qmin 13 --qmax 20 --nqueries 12 \
 	  --seed $(SEED) --bin-threshold $(BIN_TAU) \
 	  --pmin 0.60 --flip 0.10 \
 	  --vf2prob-two-pass --vf2prob-sample-every $(PROB_SAMPLE_EVERY) \
@@ -126,7 +130,7 @@ real_all: mol_S mol_M mol_L gmark_S gmark_M gmark_L real_all_assign real_all_ast
 mol_S:
 	@mkdir -p $(OUTDIR)
 	$(PYTHON) $(RUNNER) \
-	  --methods $(METHODS) --runs $(RUNS) --timeout $(TO_S) \
+	  --methods $(METHODS) --runs $(RUNS) --timeout $(TO_MOL) \
 	  --data-path $(DATADIR)/mol/mol.graphml \
 	  --queries-path $(QDIR)/mol/mol_S.json \
 	  --seed $(SEED) --bin-threshold $(BIN_TAU) \
@@ -138,7 +142,7 @@ mol_S:
 mol_M:
 	@mkdir -p $(OUTDIR)
 	$(PYTHON) $(RUNNER) \
-	  --methods $(METHODS) --runs $(RUNS) --timeout $(TO_M) \
+	  --methods $(METHODS) --runs $(RUNS) --timeout $(TO_MOL) \
 	  --data-path $(DATADIR)/mol/mol.graphml \
 	  --queries-path $(QDIR)/mol/mol_M.json \
 	  --seed $(SEED) --bin-threshold $(BIN_TAU) \
@@ -150,7 +154,7 @@ mol_M:
 mol_L:
 	@mkdir -p $(OUTDIR)
 	$(PYTHON) $(RUNNER) \
-	  --methods $(METHODS) --runs $(RUNS) --timeout $(TO_L) \
+	  --methods $(METHODS) --runs $(RUNS) --timeout $(TO_MOL) \
 	  --data-path $(DATADIR)/mol/mol.graphml \
 	  --queries-path $(QDIR)/mol/mol_L.json \
 	  --seed $(SEED) --bin-threshold $(BIN_TAU) \
@@ -162,7 +166,7 @@ mol_L:
 gmark_S:
 	@mkdir -p $(OUTDIR)
 	$(PYTHON) $(RUNNER) \
-	  --methods $(METHODS) --runs $(RUNS) --timeout $(TO_S) \
+	  --methods $(METHODS) --runs $(RUNS) --timeout $(TO_GMARK) \
 	  --data-path $(DATADIR)/gmark/gmark.graphml \
 	  --queries-path $(QDIR)/gmark/gmark_S.json \
 	  --seed $(SEED) --bin-threshold $(BIN_TAU) \
@@ -174,7 +178,7 @@ gmark_S:
 gmark_M:
 	@mkdir -p $(OUTDIR)
 	$(PYTHON) $(RUNNER) \
-	  --methods $(METHODS) --runs $(RUNS) --timeout $(TO_M) \
+	  --methods $(METHODS) --runs $(RUNS) --timeout $(TO_GMARK) \
 	  --data-path $(DATADIR)/gmark/gmark.graphml \
 	  --queries-path $(QDIR)/gmark/gmark_M.json \
 	  --seed $(SEED) --bin-threshold $(BIN_TAU) \
@@ -186,7 +190,7 @@ gmark_M:
 gmark_L:
 	@mkdir -p $(OUTDIR)
 	$(PYTHON) $(RUNNER) \
-	  --methods $(METHODS) --runs $(RUNS) --timeout $(TO_L) \
+	  --methods $(METHODS) --runs $(RUNS) --timeout $(TO_GMARK) \
 	  --data-path $(DATADIR)/gmark/gmark.graphml \
 	  --queries-path $(QDIR)/gmark/gmark_L.json \
 	  --seed $(SEED) --bin-threshold $(BIN_TAU) \
