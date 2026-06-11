@@ -8,6 +8,8 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <optional>
+#include <random>
 #include <string>
 #include <vector>
 
@@ -15,16 +17,39 @@
 #include "vf2prob/compat.hpp"
 #include "vf2prob/data/synthetic.hpp"
 #include "vf2prob/graph.hpp"
+#include "vf2prob/io/graphml.hpp"
 #include "vf2prob/matcher.hpp"
 #include "vf2prob/ml/train.hpp"
 #include "vf2prob/registry.hpp"
 
 using namespace vf2prob;
 
-// Recovery accuracy of `method` at noise `flip` over n seeded instances. If `w`
-// is non-null the matcher uses those (learned) compatibility weights.
+// Copy of G with node labels redrawn uniformly from `nlabels` classes (seeded).
+// Used for the real-topology experiment: keep the SNAP topology and Jaccard
+// edge probabilities, but control label cardinality so that exact recovery is
+// measurable (the native degree-quantile labels are too coarse for that).
+static LabeledGraph relabel_uniform(const LabeledGraph& G, int nlabels,
+                                    uint64_t seed) {
+  std::mt19937_64 rng(seed);
+  std::vector<LabelId> labels(G.num_nodes());
+  for (NodeId u = 0; u < G.num_nodes(); ++u)
+    labels[u] = static_cast<LabelId>(rng() % nlabels);
+  std::vector<LabeledGraph::Edge> edges;
+  edges.reserve(static_cast<size_t>(G.num_edges()));
+  for (NodeId u = 0; u < G.num_nodes(); ++u)
+    for (const NodeId* it = G.neighbors_begin(u); it != G.neighbors_end(u); ++it)
+      if (*it > u)
+        edges.emplace_back(u, *it, G.edge_label(u, *it), G.edge_prob(u, *it));
+  return LabeledGraph(G.num_nodes(), std::move(labels), edges);
+}
+
+// Recovery accuracy of `method` at noise `flip` over n seeded instances. If
+// `base` is non-null it is the clean source graph (real topology); otherwise a
+// fresh synthetic graph per instance. If `w` is non-null the matcher uses those
+// (learned) compatibility weights.
 static double recovery(const std::string& method, ml::TrainConfig cfg, double flip,
-                       int n, uint64_t base, const compat::Params* w = nullptr) {
+                       int n, uint64_t base_seed, const LabeledGraph* base = nullptr,
+                       const compat::Params* w = nullptr) {
   cfg.flip = flip;
   auto m = make_matcher(method);
   if (!m) return -1.0;
@@ -37,14 +62,14 @@ static double recovery(const std::string& method, ml::TrainConfig cfg, double fl
     sp.elabels = cfg.elabels;
     sp.pmin = 1.0;
     sp.flip = 0.0;
-    sp.seed = base + 1 + inst;
-    const LabeledGraph Gclean = data::make_synthetic(sp);
+    sp.seed = base_seed + 1 + inst;
+    const LabeledGraph Gclean = base ? *base : data::make_synthetic(sp);
     const auto qs = data::sample_connected_queries(Gclean, cfg.qsize, cfg.qsize,
-                                                   1, base + 7001 + inst);
+                                                   1, base_seed + 7001 + inst);
     if (qs.empty()) continue;
     const std::vector<NodeId>& S = qs[0];
     const LabeledGraph Q = induced_subgraph(Gclean, S);
-    const LabeledGraph Gobs = ml::make_observed(Gclean, cfg, base + 5001 + inst);
+    const LabeledGraph Gobs = ml::make_observed(Gclean, cfg, base_seed + 5001 + inst);
     MatchOptions opt;
     opt.timeout_s = 10.0;
     opt.collect_metrics = false;
@@ -71,6 +96,31 @@ int main(int argc, char** argv) {
   const std::vector<std::string> methods = appcli::split_csv(
       appcli::get(a, "methods", "mpm,vf2bin,vf2prob-astar-assign"));
   const bool learned = appcli::get(a, "learned", "1") == "1";
+  // Real-topology mode: load a GraphML graph (e.g. SNAP) as the clean base and
+  // optionally redraw its node labels with `--relabel N` classes (seeded).
+  const std::string data_path = appcli::get(a, "data-path", "");
+  const int relabel = appcli::geti(a, "relabel", 0);
+  std::optional<LabeledGraph> base_holder;
+  const LabeledGraph* base = nullptr;
+  if (!data_path.empty()) {
+    base_holder = io::read_graphml(data_path).graph;
+    if (relabel > 1)
+      base_holder = relabel_uniform(*base_holder, relabel, seed + 424242);
+    base = &*base_holder;
+    int nl = 1, el = 1;
+    for (NodeId u = 0; u < base->num_nodes(); ++u)
+      nl = std::max(nl, base->node_label(u) + 1);
+    for (NodeId u = 0; u < base->num_nodes(); ++u)
+      for (const NodeId* it = base->neighbors_begin(u);
+           it != base->neighbors_end(u); ++it)
+        if (*it > u) el = std::max(el, base->edge_label(u, *it) + 1);
+    cfg.nlabels = nl;
+    cfg.elabels = el;
+    std::cout << "real topology: " << data_path << " (nodes=" << base->num_nodes()
+              << " edges=" << base->num_edges() << " nlabels=" << nl
+              << " elabels=" << el
+              << (relabel > 1 ? " [relabelled uniformly]" : "") << ")\n";
+  }
   // Fine attribute-noise grid (fraction of node labels flipped).
   std::vector<double> flips;
   for (const auto& s : appcli::split_csv(
@@ -88,22 +138,24 @@ int main(int argc, char** argv) {
             << ", learned=" << learned << ")\n";
   for (size_t fi = 0; fi < flips.size(); ++fi) {
     const double flip = flips[fi];
-    const uint64_t base = seed + 100000ull * (fi + 1);  // same instances across methods
+    const uint64_t inst_seed = seed + 100000ull * (fi + 1);  // same instances across methods
     std::cout << "  flip=" << flip << ": ";
     for (const auto& mth : methods) {
-      const double acc = recovery(mth, cfg, flip, n, base);
+      const double acc = recovery(mth, cfg, flip, n, inst_seed, base);
       f << flip << ',' << mth << ',' << acc << ',' << n << "\n";
       std::cout << mth << "=" << acc << "  ";
     }
     if (learned) {
       // Learn the compatibilities at THIS noise level (disjoint training seed),
-      // then run the assignment-bound A* with them.
+      // then run the assignment-bound A* with them. With a real base graph the
+      // weights are trained from correspondences on that same topology.
       ml::TrainConfig tcfg = cfg;
       tcfg.flip = flip;
       tcfg.seed = seed + 900000ull + fi;
-      const compat::Params w = ml::train_weights(tcfg);
+      const compat::Params w = base ? ml::train_weights_from_graph(*base, tcfg)
+                                    : ml::train_weights(tcfg);
       const double acc =
-          recovery("vf2prob-astar-assign", cfg, flip, n, base, &w);
+          recovery("vf2prob-astar-assign", cfg, flip, n, inst_seed, base, &w);
       f << flip << ",vf2prob-learned," << acc << ',' << n << "\n";
       std::cout << "vf2prob-learned=" << acc << "  ";
     }

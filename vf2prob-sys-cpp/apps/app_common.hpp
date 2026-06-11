@@ -81,7 +81,11 @@ inline std::string path_stem(const std::string& path) {
 inline double median(std::vector<double> v) {
   if (v.empty()) return 0.0;
   std::sort(v.begin(), v.end());
-  return v[v.size() / 2];
+  const size_t n = v.size();
+  // True median: average the two middle elements for even n (the previous
+  // upper-element shortcut biased the runner's console medians).
+  if (n % 2 == 1) return v[n / 2];
+  return 0.5 * (v[n / 2 - 1] + v[n / 2]);
 }
 
 }  // namespace appcli
