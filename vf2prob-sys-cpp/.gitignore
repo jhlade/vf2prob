@@ -1,0 +1,21 @@
+# Build artefacts
+/build/
+/cmake-build-*/
+*.o
+*.obj
+*.a
+
+# Local working notes
+/.info/
+
+# Data, queries and results (reproducible from prep_* + seed)
+/data/
+/queries/
+/results/
+/.tmp/
+
+# CLion / JB
+/.idea/
+
+# OS
+.DS_Store
