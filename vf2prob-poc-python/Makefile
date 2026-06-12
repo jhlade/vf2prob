@@ -34,7 +34,7 @@ ECHO = @printf
 
 build:
 	python3 -m venv .venv
-	.venv/bin/pip install -q networkx scipy numpy matplotlib pandas
+	.venv/bin/pip install -q networkx scipy numpy
 
 all: synth_all real_all
 

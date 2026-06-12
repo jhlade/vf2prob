@@ -1,5 +1,5 @@
 # VF2-Prob, Jan Hladěna, FIM UHK
-import sys, json, time
+import sys, json
 sys.path.insert(0, ".")
 import networkx as nx
 import run_experiments as R

@@ -411,7 +411,7 @@ def run_vf2prob_wrapper(G, Q, *, timeout: float, two_pass: bool, sample_every: i
     return merged
 
 
-import csv, tempfile, shutil
+import csv, shutil
 
 
 def _csv_read_rows(path, expected_header):

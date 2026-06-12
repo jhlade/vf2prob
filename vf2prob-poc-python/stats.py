@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """Compute summary statistics for the write-up: REI, completion, state medians,
 tightness (root UB gap), and paired Wilcoxon tests on per-query states."""
-import json, glob, os, statistics, collections
+import json, glob, os, statistics
 from scipy.stats import wilcoxon
 
 RAW = "../results_raw"

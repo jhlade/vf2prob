@@ -7,7 +7,7 @@ For each query:
      compute assign-UB (ub_c) and check cur_score + ub_c >= V (admissible).
   3. Report the first prefix where it fails (assign-UB pruned the optimum).
 """
-import sys, json, math
+import sys, json
 sys.path.insert(0, ".")
 import networkx as nx
 import run_experiments as R
