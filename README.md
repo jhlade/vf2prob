@@ -64,11 +64,10 @@ All outputs land in `results/` as CSV files.
 ```
 vf2prob/
 ├── Makefile                   global orchestration
-├── scripts/fetch_data.py      data acquisition (SNAP download, mol/gmark generation)
+├── scripts/                   data preparation and paper-data helpers
 ├── data/                      graph GraphML files (gitignored)
 ├── queries/                   query JSON files (gitignored)
 ├── results/                   CSV outputs (gitignored)
-├── paper/                     future published article only
 ├── vf2prob-poc-python/        Python proof-of-concept implementation
 └── vf2prob-sys-cpp/           C++ system implementation
 ```

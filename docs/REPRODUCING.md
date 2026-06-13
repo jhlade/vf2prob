@@ -103,6 +103,30 @@ The explored-states numbers (Fig. 2, Fig. 4, Tables 5–6) are the primary metri
 and are identical across machines for a fixed seed; the wall-clock panels
 (Fig. 3, Fig. 6b) are secondary, machine-dependent context.
 
+### Data pipeline and extra baselines
+
+The C++ benches pass `--max-states 200000` (the state budget), so per-query states and
+completion are machine-independent; the wall-clock timeout is only a safety net.
+Helper scripts in `scripts/` (the manuscript directory is set by `PAPER_DIR`, or
+`--paper-dir`):
+
+- `make_paper_data.py` — regenerates the manuscript's `tables/snap_scalability.tex` and
+  `figures/_data/*.tex` from `results/*.csv`.
+- `run_external_solvers.sh` — exports each SNAP instance via `vf2prob_run --export-lad`
+  and runs the Glasgow (vertex-labelled) and PathLAD+ (unlabelled, via
+  `lad_strip_labels.py`) solvers → `results/ext_{glasgow,pathlad}_*.csv`. Set
+  `GLASGOW=` / `PATHLAD=` to the binaries.
+- `blp_baseline.py` — the substitution-tolerant BLP of Le Bodic et al. (2012) solved with
+  HiGHS (`scipy.optimize.milp`), on a small instance from `gen_small_graphml.py`.
+- `sweep_weights.sh` — fixed-weight `(w0,w_l)` sensitivity of recovery
+  (`recovery --fixed-weights`).
+- `prep_string.py` — builds a GraphML from a STRING PPI links file (`p(e)=score/1000`);
+  runs via `--dataset graphml`.
+
+After a re-run: `make -C vf2prob-sys-cpp bench-all`, `python3 scripts/make_paper_data.py`,
+then `make both` in the manuscript directory. (The per-method `assign_fallback` rate the
+runner prints feeds the manuscript's fallback macros.)
+
 ### Ordering ablation, noise sensitivity, and learning
 
 These studies reuse the same seeded engine and live in `vf2prob-poc-python/`:
