@@ -11,8 +11,15 @@ SEED    ?= 324
 RUNS    ?= 3
 
 METHODS      ?= vf2,vf2pp,vf2bin,mpm,vf2prob,vf2prob-assign,vf2prob-astar,vf2prob-astar-assign
-SNAP_METHODS ?= vf2pp,vf2prob-assign,vf2prob-astar-assign
+SNAP_METHODS ?= vf2pp,mpm,vf2prob-assign,vf2prob-astar-assign
 BIN_TAU      ?= 0.7
+
+# Query counts per size (S/M use NQ, L uses NQ_L).
+NQ   ?= 32
+NQ_L ?= 30
+
+# State budget B=2e5: the completion criterion (timeout is only a safety net).
+MAXSTATES ?= 200000
 
 TO_S ?= 60
 TO_M ?= 90
@@ -54,22 +61,22 @@ bench-synth: bench-synth-S bench-synth-M bench-synth-L
 bench-synth-S:
 	@mkdir -p $(OUTDIR)
 	$(RUN) --dataset synth --methods $(METHODS) \
-	  --runs $(RUNS) --timeout $(TO_S) --qmin 5 --qmax 8 --nqueries 16 \
-	  --seed $(SEED) --pmin 0.80 --flip 0.00 --bin-threshold $(BIN_TAU) \
+	  --runs $(RUNS) --timeout $(TO_S) --qmin 5 --qmax 8 --nqueries $(NQ) \
+	  --seed $(SEED) --pmin 0.80 --flip 0.00 --bin-threshold $(BIN_TAU) --max-states $(MAXSTATES) \
 	  --out $(OUTDIR)/cpp_synth_S.csv
 
 bench-synth-M:
 	@mkdir -p $(OUTDIR)
 	$(RUN) --dataset synth --methods $(METHODS) \
-	  --runs $(RUNS) --timeout $(TO_M) --qmin 9 --qmax 12 --nqueries 16 \
-	  --seed $(SEED) --pmin 0.70 --flip 0.05 --bin-threshold $(BIN_TAU) \
+	  --runs $(RUNS) --timeout $(TO_M) --qmin 9 --qmax 12 --nqueries $(NQ) \
+	  --seed $(SEED) --pmin 0.70 --flip 0.05 --bin-threshold $(BIN_TAU) --max-states $(MAXSTATES) \
 	  --out $(OUTDIR)/cpp_synth_M.csv
 
 bench-synth-L:
 	@mkdir -p $(OUTDIR)
 	$(RUN) --dataset synth --methods $(METHODS) \
-	  --runs $(RUNS) --timeout $(TO_L) --qmin 13 --qmax 20 --nqueries 12 \
-	  --seed $(SEED) --pmin 0.60 --flip 0.10 --bin-threshold $(BIN_TAU) \
+	  --runs $(RUNS) --timeout $(TO_L) --qmin 13 --qmax 20 --nqueries $(NQ_L) \
+	  --seed $(SEED) --pmin 0.60 --flip 0.10 --bin-threshold $(BIN_TAU) --max-states $(MAXSTATES) \
 	  --out $(OUTDIR)/cpp_synth_L.csv
 
 
@@ -86,7 +93,7 @@ bench-snap-facebook-S:
 	  --data-path $(DATADIR)/snap/facebook_combined.graphml \
 	  --queries-path $(QDIR)/snap/facebook_S.json \
 	  --methods $(SNAP_METHODS) --runs $(RUNS) --timeout $(TO_S) \
-	  --seed $(SEED) --bin-threshold $(BIN_TAU) \
+	  --seed $(SEED) --bin-threshold $(BIN_TAU) --max-states $(MAXSTATES) \
 	  --out $(OUTDIR)/cpp_facebook_S.csv
 
 bench-snap-facebook-M:
@@ -95,7 +102,7 @@ bench-snap-facebook-M:
 	  --data-path $(DATADIR)/snap/facebook_combined.graphml \
 	  --queries-path $(QDIR)/snap/facebook_M.json \
 	  --methods $(SNAP_METHODS) --runs $(RUNS) --timeout $(TO_M) \
-	  --seed $(SEED) --bin-threshold $(BIN_TAU) \
+	  --seed $(SEED) --bin-threshold $(BIN_TAU) --max-states $(MAXSTATES) \
 	  --out $(OUTDIR)/cpp_facebook_M.csv
 
 bench-snap-facebook-L:
@@ -104,7 +111,7 @@ bench-snap-facebook-L:
 	  --data-path $(DATADIR)/snap/facebook_combined.graphml \
 	  --queries-path $(QDIR)/snap/facebook_L.json \
 	  --methods $(SNAP_METHODS) --runs $(RUNS) --timeout $(TO_L) \
-	  --seed $(SEED) --bin-threshold $(BIN_TAU) \
+	  --seed $(SEED) --bin-threshold $(BIN_TAU) --max-states $(MAXSTATES) \
 	  --out $(OUTDIR)/cpp_facebook_L.csv
 
 bench-snap-enron-S:
@@ -113,7 +120,7 @@ bench-snap-enron-S:
 	  --data-path $(DATADIR)/snap/email_enron.graphml \
 	  --queries-path $(QDIR)/snap/enron_S.json \
 	  --methods $(SNAP_METHODS) --runs $(RUNS) --timeout $(TO_S) \
-	  --seed $(SEED) --bin-threshold $(BIN_TAU) \
+	  --seed $(SEED) --bin-threshold $(BIN_TAU) --max-states $(MAXSTATES) \
 	  --out $(OUTDIR)/cpp_enron_S.csv
 
 bench-snap-enron-M:
@@ -122,7 +129,7 @@ bench-snap-enron-M:
 	  --data-path $(DATADIR)/snap/email_enron.graphml \
 	  --queries-path $(QDIR)/snap/enron_M.json \
 	  --methods $(SNAP_METHODS) --runs $(RUNS) --timeout $(TO_M) \
-	  --seed $(SEED) --bin-threshold $(BIN_TAU) \
+	  --seed $(SEED) --bin-threshold $(BIN_TAU) --max-states $(MAXSTATES) \
 	  --out $(OUTDIR)/cpp_enron_M.csv
 
 bench-snap-enron-L:
@@ -131,7 +138,7 @@ bench-snap-enron-L:
 	  --data-path $(DATADIR)/snap/email_enron.graphml \
 	  --queries-path $(QDIR)/snap/enron_L.json \
 	  --methods $(SNAP_METHODS) --runs $(RUNS) --timeout $(TO_L) \
-	  --seed $(SEED) --bin-threshold $(BIN_TAU) \
+	  --seed $(SEED) --bin-threshold $(BIN_TAU) --max-states $(MAXSTATES) \
 	  --out $(OUTDIR)/cpp_enron_L.csv
 
 bench-snap-hepth-S:
@@ -140,7 +147,7 @@ bench-snap-hepth-S:
 	  --data-path $(DATADIR)/snap/ca_hepth.graphml \
 	  --queries-path $(QDIR)/snap/hep-th_S.json \
 	  --methods $(SNAP_METHODS) --runs $(RUNS) --timeout $(TO_S) \
-	  --seed $(SEED) --bin-threshold $(BIN_TAU) \
+	  --seed $(SEED) --bin-threshold $(BIN_TAU) --max-states $(MAXSTATES) \
 	  --out $(OUTDIR)/cpp_hepth_S.csv
 
 bench-snap-hepth-M:
@@ -149,7 +156,7 @@ bench-snap-hepth-M:
 	  --data-path $(DATADIR)/snap/ca_hepth.graphml \
 	  --queries-path $(QDIR)/snap/hep-th_M.json \
 	  --methods $(SNAP_METHODS) --runs $(RUNS) --timeout $(TO_M) \
-	  --seed $(SEED) --bin-threshold $(BIN_TAU) \
+	  --seed $(SEED) --bin-threshold $(BIN_TAU) --max-states $(MAXSTATES) \
 	  --out $(OUTDIR)/cpp_hepth_M.csv
 
 bench-snap-hepth-L:
@@ -158,9 +165,22 @@ bench-snap-hepth-L:
 	  --data-path $(DATADIR)/snap/ca_hepth.graphml \
 	  --queries-path $(QDIR)/snap/hep-th_L.json \
 	  --methods $(SNAP_METHODS) --runs $(RUNS) --timeout $(TO_L) \
-	  --seed $(SEED) --bin-threshold $(BIN_TAU) \
+	  --seed $(SEED) --bin-threshold $(BIN_TAU) --max-states $(MAXSTATES) \
 	  --out $(OUTDIR)/cpp_hepth_L.csv
 
+
+# =========================
+# Smoke: 1 run, short timeout, few queries — fast pipeline check. States stay
+# deterministic (state budget), so this validates wiring; final numbers come
+# from the full sequential run.
+# =========================
+.PHONY: smoke
+smoke:
+	@mkdir -p $(OUTDIR)
+	$(RUN) --dataset synth --methods $(METHODS) \
+	  --runs 1 --timeout 10 --qmin 5 --qmax 8 --nqueries 6 \
+	  --seed $(SEED) --pmin 0.80 --flip 0.00 --bin-threshold $(BIN_TAU) \
+	  --max-states $(MAXSTATES) --out $(OUTDIR)/cpp_smoke.csv
 
 # =========================
 # Full suite + aggregation

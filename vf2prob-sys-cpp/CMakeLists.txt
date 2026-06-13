@@ -16,12 +16,18 @@ endif()
 option(VF2PROB_BUILD_TESTS "Build unit/property tests" ON)
 option(VF2PROB_WITH_CURL   "Link libcurl for SNAP download (else shell out to curl)" OFF)
 option(VF2PROB_WITH_ZLIB   "Link zlib for .gz decompression (else shell out to gunzip)" OFF)
+# Opt-in -march=native; OFF by default so the released build stays portable.
+option(VF2PROB_NATIVE      "Tune for the build host (-march=native)" OFF)
 
 if(MSVC)
     add_compile_options(/W4 /permissive-)
 else()
     # full check
     add_compile_options(-Wall -Wextra -Wpedantic)
+endif()
+
+if(VF2PROB_NATIVE AND NOT MSVC)
+    add_compile_options(-march=native)
 endif()
 
 # Core library

@@ -96,6 +96,20 @@ int main(int argc, char** argv) {
   const std::vector<std::string> methods = appcli::split_csv(
       appcli::get(a, "methods", "mpm,vf2bin,vf2prob-astar-assign"));
   const bool learned = appcli::get(a, "learned", "1") == "1";
+  // Optional override of the fixed weights: a file with the five weights
+  // (vf2prob_run --weights format).
+  std::optional<compat::Params> fixedw;
+  if (const std::string fwp = appcli::get(a, "fixed-weights", ""); !fwp.empty()) {
+    std::ifstream fw(fwp);
+    std::string s, line;
+    while (std::getline(fw, line)) s += line + "\n";
+    if (!s.empty()) {
+      fixedw = compat::parse_params(s);
+      std::cout << "fixed weights overridden from " << fwp << "\n";
+    } else {
+      std::cerr << "warning: cannot read --fixed-weights " << fwp << "\n";
+    }
+  }
   // Real-topology mode: load a GraphML graph (e.g. SNAP) as the clean base and
   // optionally redraw its node labels with `--relabel N` classes (seeded).
   const std::string data_path = appcli::get(a, "data-path", "");
@@ -141,7 +155,8 @@ int main(int argc, char** argv) {
     const uint64_t inst_seed = seed + 100000ull * (fi + 1);  // same instances across methods
     std::cout << "  flip=" << flip << ": ";
     for (const auto& mth : methods) {
-      const double acc = recovery(mth, cfg, flip, n, inst_seed, base);
+      const double acc = recovery(mth, cfg, flip, n, inst_seed, base,
+                                  fixedw ? &*fixedw : nullptr);
       f << flip << ',' << mth << ',' << acc << ',' << n << "\n";
       std::cout << mth << "=" << acc << "  ";
     }

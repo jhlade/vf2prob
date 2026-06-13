@@ -87,36 +87,63 @@ double assign_upper_bound(const LabeledGraph& G, const LabeledGraph& Q,
   const int n = static_cast<int>(unmapped.size());
   if (n == 0) return 0.0;
 
-  // Per-row candidate pools + a shared column index over distinct candidates.
+  // Guard: very large frontiers stay on the cheap node bound.
+  if (n > 64) {
+    ++s_assign_fallbacks;
+    return node_ub;
+  }
+
+  // Reduce each row to its top-n candidates by weight. In a max-weight injective
+  // assignment a row is outranked on at most n-1 columns, so one of its top-n is
+  // always free; restricting to them leaves the optimum unchanged and caps the
+  // shared column count at m <= n*n.
   std::vector<std::vector<NodeId>> pools(n);
+  std::vector<std::vector<double>> wts(n);
   std::unordered_map<NodeId, int> col_of;
   std::vector<NodeId> cols;
   for (int i = 0; i < n; ++i) {
-    pools[i] = feasible_candidates(G, Q, unmapped[i], mapping, used);
-    if (pools[i].empty()) {
+    const NodeId q = unmapped[i];
+    std::vector<NodeId> pool = feasible_candidates(G, Q, q, mapping, used);
+    if (pool.empty()) {
       ++s_assign_fallbacks;
       return node_ub;  // dead state -> node bound is safe
     }
-    for (NodeId u : pools[i]) {
+    std::vector<double> w(pool.size());
+    for (size_t k = 0; k < pool.size(); ++k)
+      w[k] = pair_weight(G, Q, q, pool[k], mapping, opt);
+    if (static_cast<int>(pool.size()) > n) {
+      std::vector<int> idx(pool.size());
+      for (size_t k = 0; k < idx.size(); ++k) idx[k] = static_cast<int>(k);
+      std::nth_element(idx.begin(), idx.begin() + n, idx.end(),
+                       [&](int a, int b) { return w[a] > w[b]; });
+      idx.resize(n);
+      std::vector<NodeId> rp(n);
+      std::vector<double> rw(n);
+      for (int k = 0; k < n; ++k) {
+        rp[k] = pool[idx[k]];
+        rw[k] = w[idx[k]];
+      }
+      pool.swap(rp);
+      w.swap(rw);
+    }
+    for (NodeId u : pool)
       if (col_of.emplace(u, static_cast<int>(cols.size())).second)
         cols.push_back(u);
-    }
+    pools[i] = std::move(pool);
+    wts[i] = std::move(w);
   }
   const int m = static_cast<int>(cols.size());
 
-  // No injective assignment possible, or instance too large: node bound (safe).
-  if (n > m || n > 32 || m > 4096) {
+  // No injective assignment possible (fewer distinct candidates than rows).
+  if (n > m) {
     ++s_assign_fallbacks;
     return node_ub;
   }
 
   std::vector<std::vector<double>> cost(n, std::vector<double>(m, kBigCost));
   for (int i = 0; i < n; ++i) {
-    const NodeId q = unmapped[i];
-    for (NodeId u : pools[i]) {
-      const double w = pair_weight(G, Q, q, u, mapping, opt);
-      cost[i][col_of[u]] = -w;  // maximize w == minimize -w
-    }
+    for (size_t k = 0; k < pools[i].size(); ++k)
+      cost[i][col_of[pools[i][k]]] = -wts[i][k];  // maximize w == minimize -w
   }
 
   std::vector<int> row_to_col;
