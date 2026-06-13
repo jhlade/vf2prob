@@ -190,6 +190,10 @@ def main():
                     help="comma separated among: facebook,enron,hep-th")
     ap.add_argument("--seed", type=int, default=42)
     ap.add_argument("--pmin", type=float, default=0.7)
+    ap.add_argument("--nq", type=int, default=32, help="queries per S/M size")
+    ap.add_argument("--nq-l", type=int, default=30, help="queries for size L")
+    ap.add_argument("--queries-only", action="store_true",
+                    help="regenerate query JSONs only; do not rewrite the GraphML")
     args = ap.parse_args()
 
     rng = random.Random(args.seed)
@@ -219,18 +223,25 @@ def main():
         _assign_node_labels(G, k=5)
         _assign_edge_labels_and_probs(G, pmin=args.pmin, alpha=6.0)
         out_graph = data_dir / ofile
-        print(f"[save] {out_graph}")
-        nx.write_graphml(G, out_graph)
+        if args.queries_only:
+            print(f"[skip] {out_graph} (--queries-only)")
+        else:
+            print(f"[save] {out_graph}")
+            nx.write_graphml(G, out_graph)
 
         # queries: S/M/L
         reg = {
-            "S": ((5, 8), 16),
-            "M": ((9, 12), 16),
-            "L": ((13, 20), 12),
+            "S": ((5, 8), args.nq),
+            "M": ((9, 12), args.nq),
+            "L": ((13, 20), args.nq_l),
         }
         for regime, (rng_sizes, nq) in reg.items():
+            # zlib.crc32 instead of hash(): Python's hash() is salted per process
+            # (PYTHONHASHSEED), so query sets would not be reproducible across runs.
+            import zlib
+            regime_seed = args.seed + zlib.crc32(f"{key}:{regime}".encode()) % 1_000_000
             queries = _sample_connected_queries(G, rng_sizes[0], rng_sizes[1], nq,
-                                                seed=args.seed + hash((key, regime)) % 1_000_000)
+                                                seed=regime_seed)
             out_q = q_dir / f"{key}_{regime}.json"
             _write_queries_json(out_q, regime=regime, size_range=rng_sizes, nqueries=nq, seed=args.seed,
                                 queries=queries)
