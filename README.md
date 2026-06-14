@@ -1,6 +1,8 @@
 # VF2-Prob: Probabilistic Subgraph Isomorphism
 
-> **TBD**
+> Exact, provably-optimal subgraph isomorphism under attribute uncertainty — recovering the most
+> probable embedding where hard-predicate matchers fail, across categorical labels and continuous
+> (geometric) attributes.
 
 ---
 
@@ -16,6 +18,7 @@
 
 ```
 make run            # fetch data, build both implementations, run all benchmarks
+make run-all        # ... plus the recovery-vs-noise sweeps (robustness figure)
 make run SEED=324   # same with a custom seed
 ```
 
@@ -25,9 +28,10 @@ make run SEED=324   # same with a custom seed
 
 ```
 make build          # Python venv + C++ compilation
-make fetch-data     # download SNAP; generate mol/gmark datasets
-make bench-python   # Python PoC benchmarks  ->  results/results_*.csv
-make bench-cpp      # C++ benchmarks         ->  results/cpp_*.csv
+make fetch-data     # download SNAP + IAM Letter; generate mol/gmark datasets
+make bench-python   # Python PoC benchmarks       ->  results/results_*.csv
+make bench-cpp      # C++ scalability benchmarks  ->  results/cpp_*.csv
+make bench-recovery # recovery vs noise (synth/ca-HepTh/STRING/IAM) -> results/*recovery*.csv
 ```
 
 ---
@@ -46,6 +50,10 @@ make -C vf2prob-sys-cpp bench-synth-S
 make -C vf2prob-sys-cpp bench-synth-S SEED=324 METHODS=vf2prob,vf2prob-astar-assign
 make -C vf2prob-sys-cpp bench-snap
 make -C vf2prob-sys-cpp test
+
+# Recovery vs. noise (feeds the robustness figure, Fig. recovery)
+make iam              # IAM Letter geometric recovery only (fetch + run)
+make bench-recovery   # all sweeps: synthetic, ca-HepTh, STRING PPI, IAM Letter
 ```
 
 ---
