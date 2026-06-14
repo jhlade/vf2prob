@@ -47,10 +47,17 @@ static LabeledGraph relabel_uniform(const LabeledGraph& G, int nlabels,
 // `base` is non-null it is the clean source graph (real topology); otherwise a
 // fresh synthetic graph per instance. If `w` is non-null the matcher uses those
 // (learned) compatibility weights.
-static double recovery(const std::string& method, ml::TrainConfig cfg, double flip,
+static double recovery(const std::string& method, ml::TrainConfig cfg, double noise,
+                       bool geometric, compat::NodeKernel kernel, double kernel_h,
                        int n, uint64_t base_seed, const LabeledGraph* base = nullptr,
                        const compat::Params* w = nullptr) {
-  cfg.flip = flip;
+  if (geometric) {
+    cfg.coord_noise = noise;  // sweep coordinate-jitter stddev
+    cfg.flip = 0.0;
+  } else {
+    cfg.flip = noise;
+    cfg.coord_noise = 0.0;
+  }
   auto m = make_matcher(method);
   if (!m) return -1.0;
   int correct = 0, total = 0;
@@ -74,6 +81,8 @@ static double recovery(const std::string& method, ml::TrainConfig cfg, double fl
     opt.timeout_s = 10.0;
     opt.collect_metrics = false;
     if (w) opt.weights = *w;
+    opt.weights.node_kernel = kernel;
+    opt.weights.node_kernel_h = kernel_h;
     const MatchResult R = m->solve(Gobs, Q, opt);
     ++total;
     if (R.mapping && *R.mapping == S) ++correct;
@@ -96,6 +105,16 @@ int main(int argc, char** argv) {
   const std::vector<std::string> methods = appcli::split_csv(
       appcli::get(a, "methods", "mpm,vf2bin,vf2prob-astar-assign"));
   const bool learned = appcli::get(a, "learned", "1") == "1";
+  // Continuous-attribute (geometric) mode for the IAM/pattern-recognition
+  // experiment: score nodes by an RBF kernel on coordinates and sweep the
+  // coordinate-jitter stddev instead of the label-flip rate.
+  const std::string node_kernel_s = appcli::get(a, "node-kernel", "categorical");
+  const bool geometric = node_kernel_s == "rbf";
+  const compat::NodeKernel kernel =
+      geometric ? compat::NodeKernel::RBF : compat::NodeKernel::Categorical;
+  const double kernel_h = appcli::getd(a, "kernel-h", 1.0);
+  cfg.decoy_frac = appcli::getd(a, "decoy-frac", cfg.decoy_frac);
+  cfg.true_p_min = appcli::getd(a, "true-pmin", cfg.true_p_min);
   // Optional override of the fixed weights: a file with the five weights
   // (vf2prob_run --weights format).
   std::optional<compat::Params> fixedw;
@@ -149,14 +168,15 @@ int main(int argc, char** argv) {
   std::cout << "recovery sensitivity (n=" << n << " per cell, qsize=" << cfg.qsize
             << ", nlabels=" << cfg.nlabels
             << (cfg.structured_noise ? ", structured" : "")
+            << (geometric ? ", geometric/RBF" : "")
             << ", learned=" << learned << ")\n";
   for (size_t fi = 0; fi < flips.size(); ++fi) {
     const double flip = flips[fi];
     const uint64_t inst_seed = seed + 100000ull * (fi + 1);  // same instances across methods
     std::cout << "  flip=" << flip << ": ";
     for (const auto& mth : methods) {
-      const double acc = recovery(mth, cfg, flip, n, inst_seed, base,
-                                  fixedw ? &*fixedw : nullptr);
+      const double acc = recovery(mth, cfg, flip, geometric, kernel, kernel_h, n,
+                                  inst_seed, base, fixedw ? &*fixedw : nullptr);
       f << flip << ',' << mth << ',' << acc << ',' << n << "\n";
       std::cout << mth << "=" << acc << "  ";
     }
@@ -169,8 +189,8 @@ int main(int argc, char** argv) {
       tcfg.seed = seed + 900000ull + fi;
       const compat::Params w = base ? ml::train_weights_from_graph(*base, tcfg)
                                     : ml::train_weights(tcfg);
-      const double acc =
-          recovery("vf2prob-astar-assign", cfg, flip, n, inst_seed, base, &w);
+      const double acc = recovery("vf2prob-astar-assign", cfg, flip, geometric,
+                                  kernel, kernel_h, n, inst_seed, base, &w);
       f << flip << ",vf2prob-learned," << acc << ',' << n << "\n";
       std::cout << "vf2prob-learned=" << acc << "  ";
     }

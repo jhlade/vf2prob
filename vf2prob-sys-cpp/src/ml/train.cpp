@@ -128,7 +128,20 @@ LabeledGraph make_observed(const LabeledGraph& clean, const TrainConfig& cfg,
     ++added;
   }
 
-  return LabeledGraph(n, std::move(labels), edges);
+  LabeledGraph obs(n, std::move(labels), edges);
+  if (clean.has_coords()) {  // geometric attributes: copy, optionally jittered
+    const int d = clean.coord_dim();
+    std::vector<double> coords(static_cast<size_t>(n) * d);
+    std::normal_distribution<double> jitter(0.0, std::max(0.0, cfg.coord_noise));
+    for (NodeId u = 0; u < n; ++u) {
+      const double* src = clean.coords(u);
+      for (int t = 0; t < d; ++t)
+        coords[static_cast<size_t>(u) * d + t] =
+            src[t] + (cfg.coord_noise > 0.0 ? jitter(rng) : 0.0);
+    }
+    obs.set_node_coords(d, std::move(coords));
+  }
+  return obs;
 }
 
 static compat::Params train_core(

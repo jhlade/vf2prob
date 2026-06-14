@@ -35,6 +35,10 @@ struct TrainConfig {
   bool per_label_node = false;   // learn a per-label-pair node compatibility table
   bool per_label_edge = false;   // learn a per-label-pair edge bias table
   bool structured_noise = false; // flip labels to (label+1) mod n, not uniformly
+  // Geometric observation noise: stddev of i.i.d. Gaussian jitter added to each
+  // continuous node coordinate in make_observed (0 => coordinates copied as-is).
+  // Drives the IAM/pattern-recognition recovery experiment with node_kernel=RBF.
+  double coord_noise = 0.0;
 };
 
 // Observed data graph from a clean graph: true edges with high existence
