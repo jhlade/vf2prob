@@ -93,7 +93,8 @@ def recovery_fig(results, outdir, warn):
         ("vf2bin", "red,mark=square*", "VF2-Bin"),
         ("mpm", "black!60,mark=triangle*", "\\mMPM"),
     ]
-    for tag, src in [("synth", "recovery_synth.csv"), ("hepth", "recovery_hepth.csv")]:
+    for tag, src in [("synth", "recovery_synth.csv"), ("hepth", "recovery_hepth.csv"),
+                     ("mol", "recovery_mol.csv")]:
         rows = load_csv(results / src)
         if not rows:
             warn.append(f"{src} missing — recovery_{tag} figure not written")
