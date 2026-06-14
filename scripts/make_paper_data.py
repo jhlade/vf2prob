@@ -14,6 +14,7 @@ SNAP = [
     ("facebook", "cpp_facebook_{s}.csv"),
     ("ca-HepTh", "cpp_hepth_{s}.csv"),
     ("email-Enron", "cpp_enron_{s}.csv"),
+    ("STRING", "cpp_string_{s}.csv"),
 ]
 SNAP_METHODS = ["vf2pp", "mpm", "vf2prob-astar-assign"]
 SIZES = ["S", "M", "L"]

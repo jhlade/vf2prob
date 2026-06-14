@@ -87,6 +87,36 @@ bench-snap: bench-snap-facebook-S bench-snap-facebook-M bench-snap-facebook-L \
             bench-snap-enron-S    bench-snap-enron-M    bench-snap-enron-L \
             bench-snap-hepth-S    bench-snap-hepth-M    bench-snap-hepth-L
 
+# STRING PPI scalability: same per-query format as SNAP; feeds the tab:snap block.
+bench-string: bench-string-S bench-string-M bench-string-L
+
+bench-string-S:
+	@mkdir -p $(OUTDIR)
+	$(RUN) --dataset graphml \
+	  --data-path $(DATADIR)/string/scerevisiae.graphml \
+	  --queries-path $(QDIR)/string/string_S.json \
+	  --methods $(SNAP_METHODS) --runs $(RUNS) --timeout $(TO_S) \
+	  --seed $(SEED) --bin-threshold $(BIN_TAU) --max-states $(MAXSTATES) \
+	  --out $(OUTDIR)/cpp_string_S.csv
+
+bench-string-M:
+	@mkdir -p $(OUTDIR)
+	$(RUN) --dataset graphml \
+	  --data-path $(DATADIR)/string/scerevisiae.graphml \
+	  --queries-path $(QDIR)/string/string_M.json \
+	  --methods $(SNAP_METHODS) --runs $(RUNS) --timeout $(TO_M) \
+	  --seed $(SEED) --bin-threshold $(BIN_TAU) --max-states $(MAXSTATES) \
+	  --out $(OUTDIR)/cpp_string_M.csv
+
+bench-string-L:
+	@mkdir -p $(OUTDIR)
+	$(RUN) --dataset graphml \
+	  --data-path $(DATADIR)/string/scerevisiae.graphml \
+	  --queries-path $(QDIR)/string/string_L.json \
+	  --methods $(SNAP_METHODS) --runs $(RUNS) --timeout $(TO_L) \
+	  --seed $(SEED) --bin-threshold $(BIN_TAU) --max-states $(MAXSTATES) \
+	  --out $(OUTDIR)/cpp_string_L.csv
+
 bench-snap-facebook-S:
 	@mkdir -p $(OUTDIR)
 	$(RUN) --dataset graphml \

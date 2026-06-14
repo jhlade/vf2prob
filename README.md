@@ -49,6 +49,7 @@ make -C vf2prob-poc-python snap_all
 make -C vf2prob-sys-cpp bench-synth-S
 make -C vf2prob-sys-cpp bench-synth-S SEED=324 METHODS=vf2prob,vf2prob-astar-assign
 make -C vf2prob-sys-cpp bench-snap
+make -C vf2prob-sys-cpp bench-string   # STRING PPI scalability (feeds tab:snap)
 make -C vf2prob-sys-cpp test
 
 # Recovery vs. noise (feeds the robustness figure, Fig. recovery)
