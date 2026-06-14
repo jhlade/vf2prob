@@ -110,6 +110,45 @@ def recovery_fig(results, outdir, warn):
         (outdir / f"recovery_{tag}_data.tex").write_text("\n".join(lines) + "\n")
 
 
+def recovery_iam(results, outdir, warn):
+    rows = load_csv(results / "iam_recovery.csv")
+    if not rows:
+        warn.append("iam_recovery.csv missing — IAM recovery figure not written")
+        return
+    data = {}
+    for r in rows:
+        data.setdefault(r["method"], {})[float(r["flip"])] = float(r["accuracy"])
+    style = [
+        ("vf2prob-astar-assign", "blue,mark=*", "ours (RBF kernel)"),
+        ("vf2pp", "black!60,densely dashed,mark=square*", "VF2++ (structural)"),
+    ]
+    lines = [HEADER.rstrip("\n")]
+    for m, sty, leg in style:
+        if m not in data:
+            continue
+        # x-axis: coordinate-jitter stddev as a percentage of the unit bounding box.
+        pts = " ".join(f"({s*100:g},{a:.3f})" for s, a in sorted(data[m].items()))
+        lines += [f"\\addplot[{sty}] coordinates {{{pts}}};", f"  \\addlegendentry{{{leg}}}"]
+    (outdir / "recovery_iam_data.tex").write_text("\n".join(lines) + "\n")
+
+    # Summary macros so the prose numbers track the CSV exactly.
+    def pct(x):
+        return f"{round(x * 100)}\\,\\%"
+    ours = data.get("vf2prob-astar-assign", {})
+    struct = data.get("vf2pp", {})
+    macros = [HEADER.rstrip("\n")]
+    if 0.0 in ours:
+        macros.append(f"\\newcommand{{\\iamOursClean}}{{{pct(ours[0.0])}}}")
+    if 0.1 in ours:
+        macros.append(f"\\newcommand{{\\iamOursMid}}{{{pct(ours[0.1])}}}")
+    if struct:
+        base = st.median(struct.values())
+        macros.append(f"\\newcommand{{\\iamStructBase}}{{{pct(base)}}}")
+        if 0.1 in ours and base > 0:
+            macros.append(f"\\newcommand{{\\iamGapMid}}{{{round(ours[0.1] / base)}$\\times$}}")
+    (outdir / "iam.tex").write_text("\n".join(macros) + "\n")
+
+
 def snap_table(results, tables, warn):
     body = []
     for label, pattern in SNAP:
@@ -163,6 +202,7 @@ def main():
     warn = []
     synthbench(results, outdir, warn)
     recovery_fig(results, outdir, warn)
+    recovery_iam(results, outdir, warn)
     snap_table(results, tables, warn)
     for w in warn:
         print(f"warning: {w}", file=sys.stderr)
