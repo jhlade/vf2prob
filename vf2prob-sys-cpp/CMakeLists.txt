@@ -90,6 +90,7 @@ if(VF2PROB_BUILD_TESTS)
         tests/test_assignment.cpp
         tests/test_bounds_admissible.cpp
         tests/test_optimum_invariant.cpp
+        tests/test_continuous_kernel.cpp
         tests/test_io_roundtrip.cpp
         tests/test_vf2_baselines.cpp
         tests/test_ml.cpp
