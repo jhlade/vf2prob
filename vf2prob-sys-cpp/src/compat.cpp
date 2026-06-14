@@ -31,6 +31,26 @@ double node_compat(LabelId q_lab, LabelId u_lab, const Params& p) {
   return std::max(p.eps, std::min(1.0, sigmoid(z)));
 }
 
+double node_compat_coords(const double* xq, const double* xu, int dim,
+                          const Params& p) {
+  double d2 = 0.0;
+  for (int i = 0; i < dim; ++i) {
+    const double diff = xq[i] - xu[i];
+    d2 += diff * diff;
+  }
+  const double h = p.node_kernel_h > 0.0 ? p.node_kernel_h : 1.0;
+  const double s = std::exp(-d2 / (2.0 * h * h));
+  return std::max(p.eps, std::min(1.0, s));
+}
+
+double node_score(const LabeledGraph& Q, NodeId q, const LabeledGraph& G,
+                  NodeId u, const Params& p) {
+  if (p.node_kernel == NodeKernel::RBF && Q.has_coords() && G.has_coords() &&
+      Q.coord_dim() == G.coord_dim())
+    return node_compat_coords(Q.coords(q), G.coords(u), Q.coord_dim(), p);
+  return node_compat(Q.node_label(q), G.node_label(u), p);
+}
+
 double edge_compat(bool label_match, double p_exist, const Params& p) {
   const double lab = label_match ? 1.0 : 0.0;
   const double pe = std::min(1.0 - 1e-6, std::max(1e-6, p_exist));

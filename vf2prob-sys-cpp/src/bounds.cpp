@@ -20,9 +20,7 @@ std::vector<double> precompute_max_node_log(const LabeledGraph& G,
     for (NodeId u = 0; u < G.num_nodes(); ++u) {
       if (G.degree(u) < deg_q) continue;
       const double s =
-          opt.use_node
-              ? compat::node_compat(Q.node_label(q), G.node_label(u), opt.weights)
-              : 1.0;
+          opt.use_node ? compat::node_score(Q, q, G, u, opt.weights) : 1.0;
       if (s > best) best = s;
     }
     out[q] = compat::safe_log(best > 0.0 ? best : 1e-12);
@@ -46,8 +44,7 @@ static double pair_weight(const LabeledGraph& G, const LabeledGraph& Q, NodeId q
                           NodeId u, const std::vector<NodeId>& mapping,
                           const MatchOptions& opt) {
   double w = opt.use_node
-                 ? compat::safe_log(compat::node_compat(
-                       Q.node_label(q), G.node_label(u), opt.weights))
+                 ? compat::safe_log(compat::node_score(Q, q, G, u, opt.weights))
                  : 0.0;
   if (opt.use_edge) {
     for (const NodeId* it = Q.neighbors_begin(q); it != Q.neighbors_end(q);

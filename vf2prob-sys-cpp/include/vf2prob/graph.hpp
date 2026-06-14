@@ -46,6 +46,18 @@ class LabeledGraph {
   // 1.0 if the edge is absent or carries no probability.
   double edge_prob(NodeId u, NodeId v) const;
 
+  // Optional continuous node attributes (e.g. 2-D geometric coordinates).
+  // coord_dim()==0 means none; coords(u) points to coord_dim() doubles.
+  int coord_dim() const { return coord_dim_; }
+  bool has_coords() const { return coord_dim_ > 0; }
+  const double* coords(NodeId u) const {
+    return node_coord_.data() + static_cast<size_t>(u) * coord_dim_;
+  }
+  // Attach per-node coordinates (row-major, size num_nodes()*dim). A size/dim
+  // mismatch clears them. Kept out of the constructor so existing call sites and
+  // the CSR layout are unchanged.
+  void set_node_coords(int dim, std::vector<double> coords);
+
  private:
   int64_t find_pos(NodeId u, NodeId v) const;  // index into col_idx_, or -1
 
@@ -56,6 +68,8 @@ class LabeledGraph {
   std::vector<NodeId> col_idx_;      // size 2m, sorted per row
   std::vector<LabelId> edge_label_;  // parallel to col_idx_
   std::vector<double> edge_prob_;    // parallel to col_idx_
+  int coord_dim_ = 0;                // 0 = no coordinates
+  std::vector<double> node_coord_;   // size n*coord_dim_, row-major (optional)
 };
 
 // Induced subgraph on `nodes` (kept in the given order, relabeled to 0..k-1).

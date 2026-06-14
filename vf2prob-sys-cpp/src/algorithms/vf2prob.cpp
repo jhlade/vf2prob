@@ -61,8 +61,7 @@ static double delta_gain(const LabeledGraph& G, const LabeledGraph& Q, NodeId q,
                          NodeId u, const std::vector<NodeId>& mapping,
                          const MatchOptions& opt) {
   double g = opt.use_node
-                 ? compat::safe_log(compat::node_compat(
-                       Q.node_label(q), G.node_label(u), opt.weights))
+                 ? compat::safe_log(compat::node_score(Q, q, G, u, opt.weights))
                  : 0.0;
   if (opt.use_edge) {
     for (const NodeId* it = Q.neighbors_begin(q); it != Q.neighbors_end(q);

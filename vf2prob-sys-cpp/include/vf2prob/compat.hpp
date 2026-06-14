@@ -3,6 +3,7 @@
 #include <string>
 #include <vector>
 
+#include "vf2prob/graph.hpp"
 #include "vf2prob/types.hpp"
 
 // Calibrated logistic node/edge compatibilities (the probabilistic core):
@@ -11,6 +12,10 @@
 // A small floor eps keeps log-scores finite; the objective is additive in log
 // space: l(f) = sum log s_v + sum log s_e (each term <= 0).
 namespace vf2prob::compat {
+
+// Node attribute model: categorical label compatibility (default) or an RBF
+// kernel on continuous coordinates (e.g. geometric pattern-recognition graphs).
+enum class NodeKernel { Categorical, RBF };
 
 // Fixed, calibrated weights (kept public so tests can assert numeric parity).
 struct Params {
@@ -30,6 +35,12 @@ struct Params {
   // label, data-edge-label) pair, combined with the shared e_prob*logit(p) term.
   int n_edge_labels = 0;
   std::vector<double> edge_table;
+  // Continuous node attributes: when node_kernel==RBF and both graphs carry
+  // coordinates, s_v = exp(-||x_q - x_u||^2 / (2 h^2)), floored at eps so the
+  // bounds stay admissible exactly as in the categorical case. Default
+  // Categorical reproduces the labels-only behaviour unchanged.
+  NodeKernel node_kernel = NodeKernel::Categorical;
+  double node_kernel_h = 1.0;  // RBF bandwidth, in coordinate units
 };
 // Default calibrated parameters.
 const Params& params();
@@ -38,6 +49,15 @@ const Params& params();
 // bounds stay admissible for any Params.
 double node_compat(LabelId q_lab, LabelId u_lab, const Params& p);
 double edge_compat(bool label_match, double p_exist, const Params& p);
+// Continuous (geometric) node compatibility: an RBF on the L2 distance between
+// coordinate vectors, clamped to (eps,1] so the bounds stay admissible.
+double node_compat_coords(const double* xq, const double* xu, int dim,
+                          const Params& p);
+// Single node-score entry point used by the objective and both bounds: the RBF
+// kernel on coordinates when selected and available, else the categorical label
+// compatibility. Exactness is invariant to the branch taken (both land in (0,1]).
+double node_score(const LabeledGraph& Q, NodeId q, const LabeledGraph& G,
+                  NodeId u, const Params& p);
 // Edge compatibility from label ids: uses the per-label edge table if present,
 // otherwise the scalar match/mismatch model.
 double edge_compat(LabelId q_elabel, LabelId u_elabel, double p_exist,

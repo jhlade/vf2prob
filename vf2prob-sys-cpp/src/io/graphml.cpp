@@ -116,6 +116,8 @@ LoadedGraph read_graphml(const std::string& path) {
 
   LabelVocab node_vocab, edge_vocab;
   std::vector<LabelId> node_labels;
+  std::vector<double> node_x, node_y;
+  bool has_xy = false;
   std::unordered_map<std::string, NodeId> id_to_index;
 
   // 2) nodes (in order of appearance => compact index).
@@ -144,11 +146,21 @@ LoadedGraph read_graphml(const std::string& path) {
       }
       const NodeId idx = static_cast<NodeId>(node_labels.size());
       LabelId lab = kNoLabel;
+      double cx = 0.0, cy = 0.0;
       for (const auto& [k, v] : parse_datas(inner)) {
         auto kn = key_name.find(k);
-        if (kn != key_name.end() && kn->second == "label") lab = node_vocab.get(v);
+        if (kn == key_name.end()) continue;
+        if (kn->second == "label") {
+          lab = node_vocab.get(v);
+        } else if (kn->second == "x") {
+          try { cx = std::stod(trim(v)); has_xy = true; } catch (...) {}
+        } else if (kn->second == "y") {
+          try { cy = std::stod(trim(v)); has_xy = true; } catch (...) {}
+        }
       }
       node_labels.push_back(lab);
+      node_x.push_back(cx);
+      node_y.push_back(cy);
       if (id) id_to_index[*id] = idx;
       p = advance;
     }
@@ -207,6 +219,15 @@ LoadedGraph read_graphml(const std::string& path) {
   LoadedGraph out;
   out.graph = LabeledGraph(static_cast<NodeId>(node_labels.size()),
                            std::move(node_labels), edges);
+  if (has_xy) {
+    const size_t nn = node_x.size();
+    std::vector<double> coords(nn * 2);
+    for (size_t i = 0; i < nn; ++i) {
+      coords[i * 2] = node_x[i];
+      coords[i * 2 + 1] = node_y[i];
+    }
+    out.graph.set_node_coords(2, std::move(coords));
+  }
   out.id_to_index = std::move(id_to_index);
   return out;
 }
@@ -219,11 +240,23 @@ void write_graphml(const std::string& path, const LabeledGraph& G) {
   f << "  <key id=\"nl\" for=\"node\" attr.name=\"label\" attr.type=\"long\"/>\n";
   f << "  <key id=\"el\" for=\"edge\" attr.name=\"label\" attr.type=\"long\"/>\n";
   f << "  <key id=\"ep\" for=\"edge\" attr.name=\"prob\" attr.type=\"double\"/>\n";
+  const bool wc = G.has_coords() && G.coord_dim() >= 2;
+  if (wc) {
+    f << "  <key id=\"x\" for=\"node\" attr.name=\"x\" attr.type=\"double\"/>\n";
+    f << "  <key id=\"y\" for=\"node\" attr.name=\"y\" attr.type=\"double\"/>\n";
+  }
   f << "  <graph edgedefault=\"undirected\">\n";
   for (NodeId u = 0; u < G.num_nodes(); ++u) {
     f << "    <node id=\"" << u << "\">";
     if (G.node_label(u) != kNoLabel)
       f << "<data key=\"nl\">" << G.node_label(u) << "</data>";
+    if (wc) {
+      char cb[64];
+      std::snprintf(cb, sizeof(cb), "%.6g", G.coords(u)[0]);
+      f << "<data key=\"x\">" << cb << "</data>";
+      std::snprintf(cb, sizeof(cb), "%.6g", G.coords(u)[1]);
+      f << "<data key=\"y\">" << cb << "</data>";
+    }
     f << "</node>\n";
   }
   char buf[64];

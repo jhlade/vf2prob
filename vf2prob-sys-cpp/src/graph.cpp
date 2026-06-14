@@ -94,6 +94,17 @@ double LabeledGraph::edge_prob(NodeId u, NodeId v) const {
   return p < 0 ? 1.0 : edge_prob_[p];
 }
 
+void LabeledGraph::set_node_coords(int dim, std::vector<double> coords) {
+  if (dim <= 0 ||
+      static_cast<int64_t>(coords.size()) != static_cast<int64_t>(n_) * dim) {
+    coord_dim_ = 0;
+    node_coord_.clear();
+    return;
+  }
+  coord_dim_ = dim;
+  node_coord_ = std::move(coords);
+}
+
 LabeledGraph induced_subgraph(const LabeledGraph& G,
                               const std::vector<NodeId>& nodes) {
   const NodeId k = static_cast<NodeId>(nodes.size());
@@ -114,7 +125,17 @@ LabeledGraph induced_subgraph(const LabeledGraph& G,
         edges.emplace_back(i, j, G.edge_label(u, w), G.edge_prob(u, w));
     }
   }
-  return LabeledGraph(k, std::move(labels), edges);
+  LabeledGraph sub(k, std::move(labels), edges);
+  if (G.has_coords()) {  // carry geometric attributes onto the induced query
+    const int d = G.coord_dim();
+    std::vector<double> sc(static_cast<size_t>(k) * d);
+    for (NodeId i = 0; i < k; ++i) {
+      const double* src = G.coords(nodes[i]);
+      for (int t = 0; t < d; ++t) sc[static_cast<size_t>(i) * d + t] = src[t];
+    }
+    sub.set_node_coords(d, std::move(sc));
+  }
+  return sub;
 }
 
 }  // namespace vf2prob
