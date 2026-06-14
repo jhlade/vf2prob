@@ -73,10 +73,39 @@ def fetch_gmark(seed):
     ])
 
 
+# IAM Letter database (computer-vision pattern-recognition graphs), TU text
+# export mirrored in graphkit-learn. Each instance is a letter drawing whose
+# nodes carry 2-D coordinates (x, y); prep_iam_letter.py overlays isomorphic
+# same-class instances into one geometric "scene".
+IAM_BASE = ("https://raw.githubusercontent.com/jajupmochi/graphkit-learn/"
+            "master/datasets/Letter-med")
+IAM_FILES = ["Letter-med_A.txt", "Letter-med_graph_indicator.txt",
+             "Letter-med_graph_labels.txt", "Letter-med_node_attributes.txt",
+             "Letter-med_label_readme.txt"]
+
+
+def fetch_iam(seed):
+    import urllib.request
+    print("==> IAM Letter graphs (computer-vision pattern recognition)", flush=True)
+    d = os.path.join(DATA, "iam")
+    os.makedirs(d, exist_ok=True)
+    for fn in IAM_FILES:
+        dst = os.path.join(d, fn)
+        if os.path.isfile(dst):
+            continue
+        print(f"  downloading {fn}", flush=True)
+        urllib.request.urlretrieve(f"{IAM_BASE}/{fn}", dst)
+    _run("prep_iam_letter.py", [
+        "--in-dir", d, "--class", "W", "--k", "15", "--min-nodes", "6",
+        "--seed", str(seed), "--out", os.path.join(d, "letter.graphml"),
+    ])
+
+
 DATASET_HANDLERS = {
     "snap": fetch_snap,
     "mol": fetch_mol,
     "gmark": fetch_gmark,
+    "iam": fetch_iam,
 }
 
 if __name__ == "__main__":

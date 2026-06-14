@@ -7,7 +7,8 @@ SEED ?= 324
         fetch-data \
         bench-python bench-python-real bench-python-synth \
         bench-cpp bench-cpp-snap bench-cpp-synth \
-        run run-python run-cpp \
+        fetch-iam bench-iam iam bench-recovery \
+        run run-python run-cpp run-all \
         test \
         clean clean-python clean-cpp clean-results
 
@@ -27,6 +28,8 @@ help:
 	@printf "  bench-cpp           synth + SNAP\n"
 	@printf "  bench-cpp-synth     synthetic S/M/L only\n"
 	@printf "  bench-cpp-snap      SNAP facebook/enron/hepth\n"
+	@printf "  iam                 IAM Letter geometric recovery (fetch + run)\n"
+	@printf "  bench-recovery      recovery vs noise: synth, ca-HepTh, STRING, IAM\n"
 	@printf "\nFull pipelines:\n"
 	@printf "  run                 fetch-data + build + bench-python + bench-cpp\n"
 	@printf "  run-python          fetch-data + build-python + bench-python\n"
@@ -85,6 +88,43 @@ bench-cpp-snap:
 
 
 # =========================
+# IAM Letter geometric recovery (computer-vision pattern recognition)
+# =========================
+# A scene of 15 isomorphic same-class letter drawings overlaid in one coordinate
+# frame: structure alone cannot localise the query, so recovery measures what the
+# RBF kernel on (x, y) buys over a structure-only matcher under coordinate noise.
+fetch-iam: build-python
+	vf2prob-poc-python/.venv/bin/python3 scripts/fetch_data.py --datasets iam --seed $(SEED)
+
+bench-iam: build-cpp
+	@mkdir -p results
+	vf2prob-sys-cpp/build/recovery \
+	  --data-path data/iam/letter.graphml --node-kernel rbf --kernel-h 0.15 \
+	  --qsize 6 --instances 100 --methods vf2pp,vf2prob-astar-assign \
+	  --flips 0,0.02,0.05,0.1,0.15,0.2,0.25,0.35,0.5 \
+	  --learned 0 --decoy-frac 0 --true-pmin 1 --seed $(SEED) \
+	  --out results/iam_recovery.csv
+
+iam: fetch-iam bench-iam
+
+# All recovery-vs-noise sweeps that feed the robustness figure (Fig. recovery).
+# Real-graph sweeps are skipped (not fatal) if their data is absent.
+bench-recovery: build-cpp
+	@mkdir -p results
+	vf2prob-sys-cpp/build/recovery --instances 200 --structured 1 \
+	  --methods mpm,vf2bin,vf2prob-astar-assign --seed $(SEED) --out results/recovery_synth.csv
+	@[ -f data/snap/ca_hepth.graphml ] \
+	  && vf2prob-sys-cpp/build/recovery --instances 50 --data-path data/snap/ca_hepth.graphml \
+	     --relabel 12 --methods mpm,vf2bin,vf2prob-astar-assign --seed $(SEED) --out results/recovery_hepth.csv \
+	  || echo "  (skip ca-HepTh recovery: run 'make fetch-data' first)"
+	@[ -f data/string/scerevisiae.graphml ] \
+	  && vf2prob-sys-cpp/build/recovery --instances 50 --data-path data/string/scerevisiae.graphml \
+	     --methods mpm,vf2bin,vf2prob-astar-assign --seed $(SEED) --out results/string_recovery.csv \
+	  || echo "  (skip STRING recovery: prep the STRING graph first)"
+	$(MAKE) bench-iam SEED=$(SEED)
+
+
+# =========================
 # Full pipelines
 # =========================
 run: fetch-data build bench-python bench-cpp
@@ -92,6 +132,8 @@ run: fetch-data build bench-python bench-cpp
 run-python: fetch-data build-python bench-python
 
 run-cpp: fetch-data build-cpp bench-cpp
+
+run-all: run bench-recovery
 
 
 # =========================
