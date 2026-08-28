@@ -9,7 +9,7 @@ QDIR      ?= ../queries
 SEED      ?= 324
 RUNS      ?= 1
 
-METHODS   ?= vf2,vf2pp,vf2bin,vf2prob
+METHODS   ?= vf2,vf2pp,vf2pp-first,vf2bin,vf2prob
 BIN_TAU   ?= 0.7
 PROB_SAMPLE_EVERY ?= 300
 PROB_UB      ?= node
@@ -34,7 +34,7 @@ ECHO = @printf
 
 build:
 	python3 -m venv .venv
-	.venv/bin/pip install -q networkx scipy numpy
+	.venv/bin/pip install -q -r requirements.txt
 
 all: synth_all real_all
 

@@ -87,6 +87,33 @@ def synthbench(results, outdir, warn):
         axis({m: v[1] for m, v in med.items()}, "median wall-clock time [ms] (log)", 0.003, lambda x: f"{x:.4g}"))
 
 
+def wilson95(p, n):
+    """95% Wilson score interval for a binomial proportion."""
+    z = 1.959963984540054
+    if n <= 0:
+        return p, p
+    denom = 1.0 + z * z / n
+    center = (p + z * z / (2 * n)) / denom
+    half = (z / denom) * ((p * (1 - p) / n + z * z / (4 * n * n)) ** 0.5)
+    return max(0.0, center - half), min(1.0, center + half)
+
+
+ERRBAR = ("error bars/.cd, y dir=both, y explicit, "
+          "error bar style={line width=0.5pt, opacity=0.55}")
+
+
+def _ci_plot(sty, pts):
+    """One \\addplot with per-point 95% Wilson CI error bars.
+
+    `pts` is a list of (x, accuracy, n); the error-bar offsets are the
+    distances from the point to the Wilson interval ends.
+    """
+    coords = " ".join(
+        f"({x:g},{a:.3f}) += (0,{hi - a:.3f}) -= (0,{a - lo:.3f})"
+        for x, a, (lo, hi) in ((x, a, wilson95(a, n)) for x, a, n in pts))
+    return f"\\addplot[{sty}, {ERRBAR}] coordinates {{{coords}}};"
+
+
 def recovery_fig(results, outdir, warn):
     style = [
         ("vf2prob-learned", "blue,mark=*", "ours (learned)"),
@@ -102,13 +129,14 @@ def recovery_fig(results, outdir, warn):
             continue
         data = {}
         for r in rows:
-            data.setdefault(r["method"], {})[float(r["flip"])] = float(r["accuracy"])
+            data.setdefault(r["method"], {})[float(r["flip"])] = (
+                float(r["accuracy"]), int(float(r["n"])))
         lines = [HEADER.rstrip("\n")]
         for m, sty, leg in style:
             if m not in data:
                 continue
-            pts = " ".join(f"({f*100:g},{a:.3f})" for f, a in sorted(data[m].items()))
-            lines += [f"\\addplot[{sty}] coordinates {{{pts}}};", f"  \\addlegendentry{{{leg}}}"]
+            pts = [(f * 100, a, n) for f, (a, n) in sorted(data[m].items())]
+            lines += [_ci_plot(sty, pts), f"  \\addlegendentry{{{leg}}}"]
         (outdir / f"recovery_{tag}_data.tex").write_text("\n".join(lines) + "\n")
 
 
@@ -119,7 +147,8 @@ def recovery_iam(results, outdir, warn):
         return
     data = {}
     for r in rows:
-        data.setdefault(r["method"], {})[float(r["flip"])] = float(r["accuracy"])
+        data.setdefault(r["method"], {})[float(r["flip"])] = (
+            float(r["accuracy"]), int(float(r["n"])))
     style = [
         ("vf2prob-astar-assign", "blue,mark=*", "ours (RBF kernel)"),
         ("vf2pp", "black!60,densely dashed,mark=square*", "VF2++ (structural)"),
@@ -129,15 +158,15 @@ def recovery_iam(results, outdir, warn):
         if m not in data:
             continue
         # x-axis: coordinate-jitter stddev as a percentage of the unit bounding box.
-        pts = " ".join(f"({s*100:g},{a:.3f})" for s, a in sorted(data[m].items()))
-        lines += [f"\\addplot[{sty}] coordinates {{{pts}}};", f"  \\addlegendentry{{{leg}}}"]
+        pts = [(s * 100, a, n) for s, (a, n) in sorted(data[m].items())]
+        lines += [_ci_plot(sty, pts), f"  \\addlegendentry{{{leg}}}"]
     (outdir / "recovery_iam_data.tex").write_text("\n".join(lines) + "\n")
 
     # Summary macros so the prose numbers track the CSV exactly.
     def pct(x):
         return f"{round(x * 100)}\\,\\%"
-    ours = data.get("vf2prob-astar-assign", {})
-    struct = data.get("vf2pp", {})
+    ours = {k: v[0] for k, v in data.get("vf2prob-astar-assign", {}).items()}
+    struct = {k: v[0] for k, v in data.get("vf2pp", {}).items()}
     macros = [HEADER.rstrip("\n")]
     if 0.0 in ours:
         macros.append(f"\\newcommand{{\\iamOursClean}}{{{pct(ours[0.0])}}}")

@@ -219,6 +219,7 @@ bench-all: bench-synth bench-snap
 
 aggregate:
 	@for f in $(OUTDIR)/cpp_*.csv; do \
+	  case $$f in *_agg.csv) continue;; esac; \
 	  base=$$(basename $$f .csv); \
 	  echo "aggregating $$f"; \
 	  $(AGG) --in $$f --out $(OUTDIR)/$${base}_agg.csv; \

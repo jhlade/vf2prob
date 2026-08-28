@@ -59,6 +59,12 @@ make bench-recovery   # all sweeps: synthetic, ca-HepTh, STRING PPI, IAM Letter
 
 ---
 
+## Paper data
+
+`make paper-data PAPER_DIR=<paper TeX dir>` regenerates every data-driven figure
+and table input of the paper (recovery curves with 95% Wilson CIs, PoC figure
+data, SNAP table, fallback-rate macros) from `results/*.csv`.
+
 ## Results
 
 All outputs land in `results/` as CSV files.
@@ -80,3 +86,9 @@ vf2prob/
 ├── vf2prob-poc-python/        Python proof-of-concept implementation
 └── vf2prob-sys-cpp/           C++ system implementation
 ```
+
+---
+
+## License
+
+BSD 3-Clause — see [LICENSE](LICENSE).

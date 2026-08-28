@@ -30,6 +30,7 @@ help:
 	@printf "  bench-cpp-snap      SNAP facebook/enron/hepth\n"
 	@printf "  iam                 IAM Letter geometric recovery (fetch + run)\n"
 	@printf "  bench-recovery      recovery vs noise: synth, ca-HepTh, STRING, IAM\n"
+	@printf "  paper-data          regenerate paper figure/table data from results (PAPER_DIR)\n"
 	@printf "\nFull pipelines:\n"
 	@printf "  run                 fetch-data + build + bench-python + bench-cpp\n"
 	@printf "  run-python          fetch-data + build-python + bench-python\n"
@@ -121,6 +122,10 @@ bench-recovery: build-cpp
 	  && vf2prob-sys-cpp/build/recovery --instances 50 --data-path data/string/scerevisiae.graphml \
 	     --methods mpm,vf2bin,vf2prob-astar-assign --seed $(SEED) --out results/string_recovery.csv \
 	  || echo "  (skip STRING recovery: prep the STRING graph first)"
+	@[ -f data/mol/mol.graphml ] \
+	  && vf2prob-sys-cpp/build/recovery --instances 50 --data-path data/mol/mol.graphml \
+	     --relabel 6 --methods mpm,vf2bin,vf2prob-astar-assign --seed $(SEED) --out results/recovery_mol.csv \
+	  || echo "  (skip mol recovery: run 'make fetch-data' first)"
 	$(MAKE) bench-iam SEED=$(SEED)
 
 
@@ -134,6 +139,13 @@ run-python: fetch-data build-python bench-python
 run-cpp: fetch-data build-cpp bench-cpp
 
 run-all: run bench-recovery
+
+# Regenerate every data-driven figure/table input of the paper from results/*.csv.
+# PAPER_DIR must point at the paper's TeX directory (defaults to ./paper).
+paper-data:
+	python3 scripts/make_paper_data.py
+	python3 scripts/make_poc_figures.py
+	python3 scripts/paper_fallback.py results/*.log
 
 
 # =========================

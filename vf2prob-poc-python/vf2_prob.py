@@ -3,9 +3,13 @@
 """
 VF2-Prob: branch-and-bound SGI with probabilistic (nonlinear) compatibilities.
 
-- Candidate generation: match-first; if empty, fallback-only(K) with heuristic ranking.
-- Pruning UB (fast, admissible): node bonuses only (precomputed maxima), clamped to >= 0 in log-space.
-- Report UB (informative): node bonus + edge bonus to already mapped neighbors, computed on rem_u (unclamped).
+- Candidate generation: purely structural (no hard label filter); attributes are soft.
+- Pruning UB (admissible): node bound (precomputed per-node maxima) or assignment
+  bound (Hungarian over structurally feasible pairs, with the bound-preserving
+  top-n column reduction; deterministic fallback to the node bound on dead or
+  oversized states — never on wall-clock time, so explored-state counts are
+  machine-independent).
+- Report UB (informative): node bonus + edge bonus to already mapped neighbors.
 - Streaming gap metrics: record on EVERY UB evaluation (reservoir sampling cap), plus root sample.
 - 2-pass friendly: when collect_metrics=False/compute_report_ub=False, metrics overhead ~0.
 """
@@ -16,10 +20,7 @@ from typing import Dict, Set, Tuple, Optional, List
 
 import networkx as nx
 
-try:
-    from compat import node_compat_label, edge_compat_prob, safe_log
-except Exception:
-    from compat import node_compat_label, edge_compat_prob, safe_log
+from compat import node_compat_label, edge_compat_prob, safe_log
 
 try:
     from scipy.optimize import linear_sum_assignment
@@ -27,14 +28,6 @@ try:
     _HAS_SCIPY = True
 except Exception:
     _HAS_SCIPY = False
-
-
-def _pos_log(x: float) -> float:
-    """Optimistic (admissible) log: clamp to >= 0 in log-space."""
-    if x <= 0.0:
-        return 0.0
-    v = safe_log(x)
-    return v if v > 0.0 else 0.0
 
 
 def _canon(u: int, v: int) -> Tuple[int, int]:
@@ -50,6 +43,7 @@ class ProbSGI:
             nl_Q: Dict[int, int],
             el_G: Dict[Tuple[int, int], int],
             edge_p: Dict[Tuple[int, int], float],
+            el_Q: Optional[Dict[Tuple[int, int], int]] = None,
             timeout_s: float = 120.0,
             use_bound: bool = True,
             use_node: bool = True,
@@ -62,6 +56,11 @@ class ProbSGI:
         self.G, self.Q = G, Q
         self.nl_G, self.nl_Q = nl_G, nl_Q
         self.el_G, self.edge_p = el_G, edge_p
+        # Query edge labels. When omitted, fall back to looking the query edge
+        # up in el_G — correct only for queries that inherit the data graph's
+        # node ids (the harness's sampled motifs); external queries should pass
+        # their own el_Q.
+        self.el_Q = el_Q if el_Q is not None else el_G
         self.timeout_s = float(timeout_s)
         self.use_bound = bool(use_bound)
         self.use_node = bool(use_node)
@@ -132,7 +131,7 @@ class ProbSGI:
         k = (qi, qj, ui, uj)
         v = self._ec_cache.get(k)
         if v is None:
-            lm = (self.el_G.get(_canon(qi, qj)) == self.el_G.get(_canon(ui, uj)))
+            lm = (self.el_Q.get(_canon(qi, qj)) == self.el_G.get(_canon(ui, uj)))
             v = edge_compat_prob(lm, self.edge_p.get(_canon(ui, uj), 1.0))
             self._ec_cache[k] = v
         return v
@@ -211,105 +210,91 @@ class ProbSGI:
                 ub_r += safe_log(best_e if best_e > 0 else 1e-12)
         return ub_r
 
-    def _UB_assign(self, mapping: Dict[int, int], used_u: Set[int], budget_ms: float = 2.0) -> Tuple[float, float]:
+    _ASSIGN_MAX_FRONTIER = 64  # deterministic guard, mirrors the C++ implementation
+
+    def _UB_assign(self, mapping: Dict[int, int], used_u: Set[int]) -> Tuple[float, float]:
         """Assignment-based upper bound (admissible).
         Uses candidates that are structurally consistent w.r.t. already mapped neighbors
         (edges to mapped neighbors must exist) and degree filter; no label filtering is applied.
-        Falls back to node-only UB on budget/size issues.
+
+        Fallback to the node-only UB is deterministic — a dead state (a row with no
+        candidates), no injective assignment (n > m), an unavailable scipy solver, or a
+        frontier beyond the guard size — never a function of wall-clock time, so
+        explored-state counts do not depend on machine speed. The top-n column
+        reduction keeps the matching small without changing the bound: in an optimal
+        injective assignment a row is outranked on at most n-1 of its columns, so one
+        of its top-n columns is always free.
         Returns (ub_prune, ub_report).
         """
-        t0 = time.perf_counter()
         unmapped_q = [q for q in self.Q_nodes if q not in mapping]
         n = len(unmapped_q)
         if n == 0:
             return 0.0, 0.0
 
-        cand_lists = []
-        cand_index = {}
-        cand_pool = []
+        def _node_fallback():
+            ub_c = self._UB_pruning_nodes_only(unmapped_q)
+            ub_r = self._UB_report_nodes_edges(len(mapping), mapping, used_u) if self.compute_report_ub else 0.0
+            return ub_c, ub_r
+
+        if n > self._ASSIGN_MAX_FRONTIER or not _HAS_SCIPY:
+            return _node_fallback()
+
+        rows: List[List[Tuple[float, int]]] = []  # per row: [(weight, candidate u)]
+        cand_index: Dict[int, int] = {}
         for q in unmapped_q:
             deg_q = self.Q.degree[q]
-            mapped_neighbors = [mapping[qn] for qn in self.Q.neighbors(q) if qn in mapping]
+            mapped_neighbors = [(qn, mapping[qn]) for qn in self.Q.neighbors(q) if qn in mapping]
             if mapped_neighbors:
-
-                nbrs = set(self.G.neighbors(mapped_neighbors[0]))
-                for un in mapped_neighbors[1:]:
+                nbrs = set(self.G.neighbors(mapped_neighbors[0][1]))
+                for _, un in mapped_neighbors[1:]:
                     nbrs &= set(self.G.neighbors(un))
                 pool = [u for u in nbrs if (u not in used_u) and (self.G.degree[u] >= deg_q)]
             else:
                 pool = [u for u in self.G.nodes() if (u not in used_u) and (self.G.degree[u] >= deg_q)]
-            cand_lists.append(pool)
-            for u in pool:
-                if u not in cand_index:
-                    cand_index[u] = len(cand_pool)
-                    cand_pool.append(u)
+            if not pool:
+                return _node_fallback()  # dead state -> node bound is safe
 
-        m = len(cand_pool)
-        if n == 0 or m == 0 or n > 32 or m > 4096:
-            remaining = unmapped_q
-            ub_c = self._UB_pruning_nodes_only(remaining)
-            ub_r = self._UB_report_nodes_edges(len(mapping), mapping, used_u) if self.compute_report_ub else 0.0
-            return ub_c, ub_r
+            weighted = []
+            for u in pool:
+                w = safe_log(self.node_compat(q, u)) if self.use_node else 0.0
+                if self.use_edge:
+                    # edges to mapped neighbors exist by candidate construction
+                    for qn, un in mapped_neighbors:
+                        w += safe_log(self.edge_compat(q, qn, u, un))
+                weighted.append((w, u))
+            # top-n column reduction (bound-preserving; deterministic tie-break by id)
+            if len(weighted) > n:
+                weighted.sort(key=lambda t: (-t[0], str(t[1])))
+                weighted = weighted[:n]
+            for _, u in weighted:
+                if u not in cand_index:
+                    cand_index[u] = len(cand_index)
+            rows.append(weighted)
+
+        m = len(cand_index)
+        if n > m:
+            return _node_fallback()  # no injective assignment exists; dead state
 
         BIG = 1e9
         C = [[BIG] * m for _ in range(n)]
-        for i, q in enumerate(unmapped_q):
-            # budget check
-            if (time.perf_counter() - t0) * 1000.0 > budget_ms:
-                remaining = unmapped_q
-                ub_c = self._UB_pruning_nodes_only(remaining)
-                ub_r = self._UB_report_nodes_edges(len(mapping), mapping, used_u) if self.compute_report_ub else 0.0
-                return ub_c, ub_r
-            deg_q = self.Q.degree[q]
-            mapped_neighbors = [(qn, mapping[qn]) for qn in self.Q.neighbors(q) if qn in mapping]
-            for u in cand_lists[i]:
-                j = cand_index[u]
-                # optimistic node gain
-                w = safe_log(self.node_compat(q, u)) if self.use_node else 0.0
-                # optimistic edges to already mapped neighbors
-                for qn, un in mapped_neighbors:
-                    if self.G.has_edge(u, un):
-                        w += safe_log(self.edge_compat(q, qn, u, un)) if self.use_edge else 0.0
-                    else:
-                        # missing edge:
-                        w += 0.0
-                C[i][j] = -w  # maximize w <=> minimize -w
+        for i in range(n):
+            for w, u in rows[i]:
+                C[i][cand_index[u]] = -w  # maximize w <=> minimize -w
 
-
+        row_ind, col_ind = linear_sum_assignment(C)
         ub = 0.0
-        if _HAS_SCIPY:
-            row_ind, col_ind = linear_sum_assignment(C)
-            for i, j in zip(row_ind, col_ind):
-                c = C[i][j]
-                if c < BIG * 0.5:
-                    ub += -c
-        else:
-            # greedy fallback
-            taken = set()
-            for i in range(n):
-                row = sorted(((C[i][j], j) for j in range(m)), key=lambda x: x[0])
-                for cost, j in row:
-                    if cost >= BIG * 0.5 or j in taken:
-                        continue
-                    taken.add(j)
-                    ub += -cost
-                    break
+        for i, j in zip(row_ind, col_ind):
+            c = C[i][j]
+            if c >= BIG * 0.5:
+                return _node_fallback()  # a row was forced onto a forbidden column
+            ub += -c
 
         return ub, ub
-
-    def UB_x(self, i: int, mapping: Dict[int, int], used_u: Set[int]) -> Tuple[float, float]:
-
-        if getattr(self, 'ub_mode', 'node') == 'assign':
-            return self._UB_assign(mapping, used_u, budget_ms=2.0)
-        remaining = self.Q_nodes[i:]
-        ub_c = self._UB_pruning_nodes_only(remaining)
-        ub_r = self._UB_report_nodes_edges(i, mapping, used_u)
-        return ub_c, ub_r
 
     def UB(self, i: int, mapping: Dict[int, int], used_u: Set[int]) -> Tuple[float, float]:
         if getattr(self, 'ub_mode', 'node') == 'assign':
             # pruning UB
-            ub_c, _ = self._UB_assign(mapping, used_u, budget_ms=2.0)
+            ub_c, _ = self._UB_assign(mapping, used_u)
             # report UB
             ub_r = self._UB_report_nodes_edges(i, mapping, used_u) if self.compute_report_ub else 0.0
             return ub_c, ub_r

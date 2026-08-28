@@ -110,6 +110,27 @@ def _build_edge_label_ids(G) -> Dict[Tuple[Any, Any], int]:
     return el_G
 
 
+def _build_shared_edge_label_ids(G, Q) -> Tuple[Dict[Tuple[Any, Any], int], Dict[Tuple[Any, Any], int]]:
+    """Edge-label id maps for G and Q over one shared vocabulary, so that equal
+    label values get equal ids in both graphs (mirrors _build_shared_node_label_ids)."""
+    def _val(d):
+        return d.get("label", d.get("type", d.get("label_id", None)))
+    vocab: List[Any] = []
+    seen = set()
+    for graph in (G, Q):
+        for _, _, d in graph.edges(data=True):
+            v = _val(d)
+            if v is not None and v not in seen: seen.add(v); vocab.append(v)
+    index = {v: i for i, v in enumerate(vocab)}
+    def _ids(graph):
+        out: Dict[Tuple[Any, Any], int] = {}
+        for u, v, d in graph.edges(data=True):
+            key = (u, v) if u <= v else (v, u)
+            out[key] = index.get(_val(d), -1)
+        return out
+    return _ids(G), _ids(Q)
+
+
 def _edge_probabilities(G) -> Dict[Tuple[Any, Any], float]:
     ep: Dict[Tuple[Any, Any], float] = {}
     for u, v, d in G.edges(data=True):
@@ -321,7 +342,10 @@ def run_vf2bin_wrapper(G, Q, *, timeout: float, bin_threshold: float) -> Dict[st
     }
 
 
-def run_vf2pp_wrapper(G, Q, *, timeout: float) -> Dict[str, Any]:
+def run_vf2pp_wrapper(G, Q, *, timeout: float, first_match: bool = False) -> Dict[str, Any]:
+    """VF2++ baseline. By default it enumerates all embeddings (the historical
+    harness semantics); with first_match=True it stops at the first embedding,
+    matching the decision semantics of the C++ VF2++ and the VF2 baseline."""
     if VF2PP is None:
         raise RuntimeError("vf2pp_engine.VF2PP not importable")
 
@@ -344,17 +368,25 @@ def run_vf2pp_wrapper(G, Q, *, timeout: float) -> Dict[str, Any]:
 
     import time as _t
     t0 = _t.time()
+    if timeout:
+        engine.deadline_ts = t0 + timeout  # enforced inside match() between states
     sols = 0
     for _m in engine.match():
         sols += 1
-        if (_t.time() - t0) > timeout:
+        if first_match or (_t.time() - t0) > timeout:
             break
+
+    # First-match mode is a decision procedure: a found embedding is a success
+    # even if the deadline expired while it was being extracted.
+    timed_out = bool(getattr(engine, "timed_out", False)) or (_t.time() - t0) > timeout
+    if first_match and sols >= 1:
+        timed_out = False
 
     return {
         "states": int(getattr(engine, "stats").states_visited) if hasattr(engine, "stats") else 0,
         "pruned": int(getattr(engine, "stats").prunes) if hasattr(engine, "stats") else 0,
         "solutions_found": int(sols),
-        "timed_out": int((_t.time() - t0) > timeout),
+        "timed_out": int(timed_out),
         "best_loglik": float("-inf"),
         "ub_gap_p50": float("nan"),
         "ub_gap_p90": float("nan"),
@@ -371,13 +403,13 @@ def run_vf2prob_once(G, Q, *, timeout: float, time_only: bool, sample_every: int
     except Exception:
         _HAS_AST = False
     nl_G, nl_Q = _build_shared_node_label_ids(G, Q)
-    el_G = _build_edge_label_ids(G)
+    el_G, el_Q = _build_shared_edge_label_ids(G, Q)
     edge_p = _edge_probabilities(G)
     EngineCls = ProbSGI
     if search == "astar" and _HAS_AST:
         EngineCls = AStarProb
     engine = EngineCls(
-        G, Q, nl_G, nl_Q, el_G, edge_p,
+        G, Q, nl_G, nl_Q, el_G, edge_p, el_Q=el_Q,
         timeout_s=timeout, use_bound=True, use_node=True, use_edge=True,
         sample_every=(10 ** 9 if time_only else sample_every),
         collect_metrics=(not time_only),
@@ -605,6 +637,9 @@ def main(argv: Optional[List[str]] = None) -> int:
         elif method == "vf2pp":
             def run_engine(G, Q, timeout):
                 return run_vf2pp_wrapper(G, Q, timeout=timeout)
+        elif method == "vf2pp-first":
+            def run_engine(G, Q, timeout):
+                return run_vf2pp_wrapper(G, Q, timeout=timeout, first_match=True)
         elif method == "vf2bin":
             def run_engine(G, Q, timeout):
                 return run_vf2bin_wrapper(G, Q, timeout=timeout, bin_threshold=args.bin_threshold)
@@ -632,7 +667,7 @@ def main(argv: Optional[List[str]] = None) -> int:
                     nm = _norm_metrics(raw)
                     timed_out = int(nm["timed_out"])
 
-                if method in ("vf2", "vf2pp", "vf2bin"):
+                if method in ("vf2", "vf2pp", "vf2pp-first", "vf2bin"):
                     success = 1.0 if (nm.get("solutions_found", 1) >= 1 and not timed_out) else 0.0
                 else:
                     success = 1.0 if (
@@ -684,7 +719,9 @@ def main(argv: Optional[List[str]] = None) -> int:
             "iqr_ms": _iqr(per_run_times),
             "states_med": _median(per_run_states),
             "prune_rate": _median(per_run_prune),
-            "success_rate": _median(per_run_success),
+            # Mean, not median: the fraction of (query, run) pairs solved. A
+            # median of 0/1 indicators would hide any failure rate below 50%.
+            "success_rate": (sum(per_run_success) / len(per_run_success)) if per_run_success else 0.0,
             "best_loglik_med": _median(per_run_bestll),
             "mem_mb": _median(per_run_mem),
             "timeout": int(any(per_run_timeout)),

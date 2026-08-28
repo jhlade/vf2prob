@@ -25,32 +25,6 @@ import networkx as nx
 Node = Hashable
 
 
-def _mem_mb() -> float:
-    return psutil.Process(os.getpid()).memory_info().rss / (1024 * 1024)
-
-
-def _iqr(values):
-    if not values:
-        return 0.0
-    q = stats.quantiles(values, n=4)
-    return q[2] - q[0]
-
-
-def _ensure_csv(path: str, header):
-    exists = os.path.exists(path) and os.path.getsize(path) > 0
-    if not exists:
-        with open(path, "w", newline="") as f:
-            writer = csv.writer(f)
-            writer.writerow(header)
-
-
-def _append_csv(path: str, row: dict, header):
-    _ensure_csv(path, header)
-    with open(path, "a", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=header)
-        writer.writerow(row)
-
-
 def _get_node_label(G: nx.Graph, u: Node, node_label_attr: Optional[str], default: str = "_") -> str:
     if node_label_attr is None:
         return default
@@ -180,6 +154,13 @@ class VF2PP:
                                   default_label=default_label)
         self.stats = Stats()
 
+        # Optional wall-clock deadline (absolute time.time() timestamp). When
+        # set, match() aborts between states even if no solution has been
+        # yielded yet — without it a barren stretch of the search could run
+        # arbitrarily past the caller's time limit.
+        self.deadline_ts: Optional[float] = None
+        self.timed_out: bool = False
+
         self.order_q: List[Node] = self._compute_static_order()
 
     # public API
@@ -218,6 +199,10 @@ class VF2PP:
         stack.append((u0, iter(cand0)))
 
         while stack:
+            if (self.deadline_ts is not None and (self.stats.states_visited & 0xFF) == 0
+                    and time.time() > self.deadline_ts):
+                self.timed_out = True
+                return
             u, cand_iter = stack[-1]
             try:
                 v = next(cand_iter)
